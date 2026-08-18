@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ArtifactType {
+  MESH
+  SPLAT
+}
+
+model Artifact {
+  id             String               @id @default(uuid()) @db.Uuid
+  slug           String               @unique
+  title          String
+  description    String               @default("")
+  type           ArtifactType
+  thumbnailPath  String?
+  contentPath     String
+  contentFilename String
+  mimeType       String
+  sizeBytes      BigInt
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  permissions    ArtifactPermission[]
+
+  @@index([type, id])
+  @@index([title])
+  @@map("artifacts")
+}
+
+model ArtifactPermission {
+  artifactId String   @db.Uuid
+  userSubject String
+  canView     Boolean  @default(true)
+  artifact    Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+
+  @@id([artifactId, userSubject])
+  @@index([userSubject, artifactId])
+  @@map("artifact_permissions")
+}
