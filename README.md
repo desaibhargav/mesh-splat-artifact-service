@@ -45,6 +45,30 @@ The generated demo subject receives explicit permission for both seeded artifact
 
 ## AWS demo deployment notes
 
+Requirements: Ubuntu, Node.js 24, npm, Git, and a cloned copy of this repository.
+
+For a fresh backend server, run the first-time setup script from an SSH session:
+
+```bash
+./scripts/setup-server.sh
+```
+
+The setup script installs PostgreSQL, starts/enables it, creates the `ubuntu` database role and `mesh_splat` database if needed, assigns a URL-safe database password, creates 2 GiB of swap if needed, runs `npm ci`, creates a server-local `.env`, rewrites it with production backend defaults, and pushes the Prisma schema to PostgreSQL. It prints the generated demo username and password once; save them immediately because the password is not stored in plaintext. It does not contain SSH keys, public IPs, demo passwords, or private artifact files.
+
+The setup script refuses to overwrite an existing `.env` by default. Redeployments should use `./scripts/deploy-server.sh`; they preserve the existing username, password hash, session key, and database password.
+
+The downloaded public demonstration assets are placed under:
+
+```text
+data/assets
+```
+
+Any assets not downloaded by the setup script, such as contributor-provided meshes, must be placed under that same directory before seeding/deployment. For example:
+
+```text
+data/assets/chess-set-photogrammetry.glb
+```
+
 On the backend artifact-service instance, install PostgreSQL and create the application database:
 
 ```bash
@@ -161,6 +185,14 @@ curl -i http://BACKEND_PRIVATE_IP:3000/health
 ```
 
 The expected response is `HTTP/1.1 200 OK` with `{"status":"ok"}`.
+
+After PostgreSQL, `.env`, and assets have been configured once, future backend deployments can be run from an SSH session on the backend server:
+
+```bash
+./scripts/deploy-server.sh
+```
+
+The script pulls the latest `main`, installs dependencies from the lockfile, regenerates Prisma, reseeds artifact permissions for the server-local `DEMO_USERNAME`, rebuilds TypeScript, installs or updates the `systemd` service file, enables the service, and restarts it. It checks that `.env` exists before running. It does not contain SSH keys, passwords, IP addresses, or other secrets.
 
 ## Current status
 
