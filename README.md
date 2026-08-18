@@ -57,6 +57,17 @@ The setup script installs PostgreSQL, starts/enables it, creates the `ubuntu` da
 
 The setup script refuses to overwrite an existing `.env` by default. Redeployments should use `./scripts/deploy-server.sh`; they preserve the existing username, password hash, session key, and database password.
 
+First-time setup script inputs:
+
+| Variable | Default | How to choose it |
+| --- | --- | --- |
+| `DB_NAME` | `mesh_splat` | Keep the default unless the PostgreSQL database must have a different name. |
+| `DB_USER` | `ubuntu` | Keep the default when running the service as the Ubuntu EC2 user. |
+| `DB_PASSWORD` | generated | Usually omit it. Set only when an administrator must supply a specific PostgreSQL password. |
+| `SWAPFILE` | `/swapfile` | Keep the default on a small EC2 instance. |
+| `SWAP_SIZE` | `2G` | Keep the default for `t3.micro`; increase if dependency installation/builds are still killed for memory. |
+| `FORCE_SETUP` | empty | Do not set during normal use. Set `FORCE_SETUP=1` only when intentionally regenerating setup values on a server. |
+
 The downloaded public demonstration assets are placed under:
 
 ```text
@@ -193,6 +204,12 @@ After PostgreSQL, `.env`, and assets have been configured once, future backend d
 ```
 
 The script pulls the latest `main`, installs dependencies from the lockfile, regenerates Prisma, reseeds artifact permissions for the server-local `DEMO_USERNAME`, rebuilds TypeScript, installs or updates the `systemd` service file, enables the service, and restarts it. It checks that `.env` exists before running. It does not contain SSH keys, passwords, IP addresses, or other secrets.
+
+Redeployment script inputs:
+
+| Variable | Default | How to choose it |
+| --- | --- | --- |
+| `SERVICE_NAME` | `mesh-splat-artifact-service` | Keep the default unless the systemd service should use a different name. |
 
 ## Current status
 
