@@ -10,6 +10,7 @@ import { hash } from "argon2";
 const root = resolve(import.meta.dirname, "..");
 const assetRoot = resolve(root, "data/assets");
 const envPath = resolve(root, ".env");
+const generatedUsername = `demo-${randomBytes(6).toString("hex")}`;
 const generatedPassword = randomBytes(15).toString("base64url");
 
 await mkdir(assetRoot, { recursive: true });
@@ -25,7 +26,7 @@ if (await exists(envPath)) {
     `DATABASE_URL=postgresql://${databaseUser}@127.0.0.1:5432/mesh_splat`,
     "ARTIFACT_ROOT=./data/assets",
     "AUTH_MODE=demo-session",
-    "DEMO_USERNAME=professor",
+    `DEMO_USERNAME=${generatedUsername}`,
     `DEMO_PASSWORD_HASH=${passwordHash}`,
     `DEMO_SESSION_KEY=${randomBytes(32).toString("hex")}`,
     "DEMO_SESSION_TTL_SECONDS=3600",
@@ -33,7 +34,7 @@ if (await exists(envPath)) {
   ].join("\n");
   await writeFile(envPath, environment, { encoding: "utf8", mode: 0o600 });
   console.log("Created .env with local-only credentials:");
-  console.log("  username: professor");
+  console.log(`  username: ${generatedUsername}`);
   console.log(`  password: ${generatedPassword}`);
   console.log("Save the password now; it is not stored in plaintext.");
 }

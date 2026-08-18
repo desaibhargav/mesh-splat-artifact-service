@@ -38,7 +38,7 @@ const sogArtifact: ArtifactRecord = {
 
 const verifier: AccessTokenVerifier = {
   async verify(token) {
-    if (token === "valid-token") return { subject: "professor" };
+    if (token === "valid-token") return { subject: "demo-user" };
     if (token === "attacker-token") return { subject: "attacker" };
     throw new Error("invalid");
   }
@@ -56,7 +56,7 @@ class TestRepository implements ArtifactRepository {
   }
 
   async findAuthorizedById(subject: string, artifactId: string) {
-    return subject === "professor" && artifactId === this.record.id ? this.record : null;
+    return subject === "demo-user" && artifactId === this.record.id ? this.record : null;
   }
 }
 
@@ -93,7 +93,7 @@ describe("artifact security boundary", () => {
     const response = await app.inject({
       method: "GET",
       url: "/api/v1/artifacts",
-      headers: { "x-authenticated-user": "professor" }
+      headers: { "x-authenticated-user": "demo-user" }
     });
     expect(response.statusCode).toBe(401);
   });
@@ -107,7 +107,7 @@ describe("artifact security boundary", () => {
       headers: { authorization: "Bearer valid-token" }
     });
     expect(response.statusCode).toBe(200);
-    expect(repository.lastSearch?.subject).toBe("professor");
+    expect(repository.lastSearch?.subject).toBe("demo-user");
     expect(response.json().items[0].contentUrl).toBe(`/files/${artifact.id}/test-model.glb`);
   });
 
@@ -171,13 +171,13 @@ describe("artifact security boundary", () => {
   });
 });
 
-describe("temporary professor authentication adapter", () => {
+describe("temporary demo-user authentication adapter", () => {
   it("issues an encrypted session and uses it on protected artifact requests", async () => {
     const demoConfig: AppConfig = {
       ...config,
       auth: {
         mode: "demo-session",
-        username: "professor",
+        username: "demo-user",
         passwordHash: await hash("correct-horse-battery-staple"),
         sessionKey: Buffer.alloc(32, 7),
         sessionTtlSeconds: 3_600
@@ -192,7 +192,7 @@ describe("temporary professor authentication adapter", () => {
     const login = await app.inject({
       method: "POST",
       url: "/api/v1/auth/session",
-      payload: { username: "professor", password: "correct-horse-battery-staple" }
+      payload: { username: "demo-user", password: "correct-horse-battery-staple" }
     });
     expect(login.statusCode).toBe(204);
     const cookie = login.cookies.find(({ name }) => name === "mesh_splat_demo");
@@ -212,7 +212,7 @@ describe("temporary professor authentication adapter", () => {
       ...config,
       auth: {
         mode: "demo-session",
-        username: "professor",
+        username: "demo-user",
         passwordHash: await hash("correct-password"),
         sessionKey: Buffer.alloc(32, 9),
         sessionTtlSeconds: 3_600
@@ -226,7 +226,7 @@ describe("temporary professor authentication adapter", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/auth/session",
-      payload: { username: "professor", password: "wrong-password" }
+      payload: { username: "demo-user", password: "wrong-password" }
     });
     expect(response.statusCode).toBe(401);
     expect(response.cookies).toHaveLength(0);
