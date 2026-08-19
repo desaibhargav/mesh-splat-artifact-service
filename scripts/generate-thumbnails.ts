@@ -72,7 +72,10 @@ async function discoverDerivatives(): Promise<DerivativeArtifact[]> {
     }
   }
 
-  return artifacts.sort((a, b) => a.slug.localeCompare(b.slug));
+  return artifacts.sort((a, b) => {
+    if (a.type !== b.type) return a.type === "mesh" ? -1 : 1;
+    return a.slug.localeCompare(b.slug);
+  });
 }
 
 async function maxMtimeMs(path: string): Promise<number> {

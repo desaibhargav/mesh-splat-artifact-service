@@ -18,6 +18,7 @@ interface ThumbnailOptions {
 
 const DEFAULT_WIDTH = 1200;
 const DEFAULT_HEIGHT = 900;
+const DEFAULT_TIMEOUT_MS = 180_000;
 const BACKGROUND = { r: 0.13, g: 0.13, b: 0.13, a: 1 };
 const assetRoot = resolve("data/assets");
 const playcanvasModule = resolve("node_modules/playcanvas/build/playcanvas.mjs");
@@ -82,9 +83,10 @@ async function generateBrowserThumbnail(options: ThumbnailOptions, type: Thumbna
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: options.width, height: options.height, deviceScaleFactor: 1 });
-    await page.goto(pageUrl.href, { waitUntil: "networkidle0", timeout: 60_000 });
+    const timeoutMs = thumbnailTimeoutMs();
+    await page.goto(pageUrl.href, { waitUntil: "load", timeout: timeoutMs });
     await page.waitForFunction(() => (window as unknown as { __thumbnailReady?: boolean }).__thumbnailReady === true, {
-      timeout: 60_000
+      timeout: timeoutMs
     });
 
     const canvas = await page.$("canvas");
@@ -322,6 +324,12 @@ function optionalType(args: Map<string, string | boolean>, key: string): Thumbna
   if (value === undefined) return undefined;
   if (value === "mesh" || value === "splat") return value;
   throw new Error(`--${key} must be mesh or splat.`);
+}
+
+function thumbnailTimeoutMs(): number {
+  const configured = Number(process.env.THUMBNAIL_TIMEOUT_MS);
+  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_TIMEOUT_MS;
+  return configured;
 }
 
 function mimeType(path: string): string {
