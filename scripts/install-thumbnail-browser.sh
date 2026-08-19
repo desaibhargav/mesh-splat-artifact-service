@@ -43,4 +43,8 @@ if command -v apt-get >/dev/null 2>&1; then
     xdg-utils
 fi
 
-npx puppeteer browsers install chrome
+if ! npx puppeteer browsers install chrome; then
+  echo "Puppeteer's Chrome install failed. Clearing the local Puppeteer Chrome cache and retrying once." >&2
+  rm -rf "${HOME}/.cache/puppeteer/chrome"
+  npx puppeteer browsers install chrome
+fi
