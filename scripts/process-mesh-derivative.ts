@@ -1,6 +1,6 @@
 import { NodeIO, Primitive } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
-import { dedup, prune, quantize, simplify, weld } from "@gltf-transform/functions";
+import { dedup, normals, prune, quantize, simplify, weld } from "@gltf-transform/functions";
 import { MeshoptDecoder, MeshoptSimplifier } from "meshoptimizer";
 import {
   defaultManifestPath,
@@ -12,6 +12,7 @@ import {
 
 const TARGET_RATIO = 0.3;
 const MAX_TRIANGLES = 1_000_000;
+const SIMPLIFICATION_TOLERANCE = 1.05;
 
 async function main() {
   const options = parseCommonArgs(process.argv.slice(2));
@@ -31,6 +32,7 @@ async function main() {
   const document = await io.read(options.input);
   const originalTriangles = countTriangles(document);
   const appliedRatio = originalTriangles > 0 ? Math.min(TARGET_RATIO, MAX_TRIANGLES / originalTriangles) : TARGET_RATIO;
+  const removedNormals = removeNormals(document);
 
   await document.transform(
     prune({ keepExtras: false, keepAttributes: false }),
@@ -42,6 +44,7 @@ async function main() {
       error: 1,
       lockBorder: false
     }),
+    normals({ overwrite: true }),
     quantize({
       quantizationVolume: "mesh",
       quantizePosition: 10,
@@ -56,8 +59,9 @@ async function main() {
     dedup()
   );
 
-  await io.write(options.output, document);
   const derivativeTriangles = countTriangles(document);
+  assertSimplificationTarget(originalTriangles, derivativeTriangles, appliedRatio);
+  await io.write(options.output, document);
 
   await writeManifest(manifestPath, {
     schemaVersion: 1,
@@ -80,6 +84,9 @@ async function main() {
       originalTriangles,
       derivativeTriangles,
       weldBeforeSimplify: true,
+      normalsRemovedBeforeSimplify: removedNormals,
+      normalsRegeneratedAfterSimplify: true,
+      simplificationTolerance: SIMPLIFICATION_TOLERANCE,
       quantization: {
         positionBits: 10,
         normalBits: 8,
@@ -108,6 +115,42 @@ async function main() {
   console.log(`Wrote mesh derivative: ${options.output}`);
   console.log(`Wrote private manifest: ${manifestPath}`);
   console.log(`Triangles: ${originalTriangles} -> ${derivativeTriangles}`);
+}
+
+function removeNormals(document: Awaited<ReturnType<NodeIO["read"]>>): number {
+  let removed = 0;
+  for (const mesh of document.getRoot().listMeshes()) {
+    for (const primitive of mesh.listPrimitives()) {
+      const normal = primitive.getAttribute("NORMAL");
+      if (!normal) continue;
+      primitive.setAttribute("NORMAL", null);
+      if (normal.listParents().length === 0) normal.dispose();
+      removed += 1;
+    }
+  }
+  return removed;
+}
+
+function assertSimplificationTarget(
+  originalTriangles: number,
+  derivativeTriangles: number,
+  appliedRatio: number
+): void {
+  if (originalTriangles === 0) return;
+
+  const allowedTriangles = Math.ceil(originalTriangles * appliedRatio * SIMPLIFICATION_TOLERANCE);
+  if (derivativeTriangles <= allowedTriangles) return;
+
+  throw new Error(
+    [
+      "Mesh simplification did not reach the required target.",
+      `Original triangles: ${originalTriangles}.`,
+      `Derivative triangles: ${derivativeTriangles}.`,
+      `Allowed triangles with tolerance: ${allowedTriangles}.`,
+      "The derivative was not written, preventing accidental publication of a near-master mesh.",
+      "Inspect the source topology and consider a more destructive fallback policy for this asset."
+    ].join(" ")
+  );
 }
 
 function countTriangles(document: Awaited<ReturnType<NodeIO["read"]>>): number {

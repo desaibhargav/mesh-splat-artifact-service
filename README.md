@@ -45,7 +45,7 @@ Default policy:
 
 | Type | Public derivative rule |
 | --- | --- |
-| Mesh | Simplify to 30% of original triangle count, capped at 1,000,000 triangles, using MeshOpt's simplifier; aggressive quantization; no emitted `EXT_meshopt_compression` until the viewer path supports it reliably. |
+| Mesh | Simplify to 30% of original triangle count, capped at 1,000,000 triangles, using MeshOpt's simplifier; remove source normals before simplification and regenerate normals afterward so split/custom normals cannot silently block decimation; aggressive quantization; no emitted `EXT_meshopt_compression` until the viewer path supports it reliably. |
 | Splat | Decimate to 30% of original Gaussian count; convert to ordinary SOG; no Streamed SOG or LOD for now. |
 
 Generate a mesh derivative:
@@ -81,6 +81,8 @@ data/authorization/derivative-manifests
 ```
 
 That manifest records the source path, output path, file sizes, processing policy, tool versions, and whether simplification/decimation was applied. It is for server-side/admin review and should not be exposed through `/files`.
+
+Mesh simplification is required, not best-effort. The script fails loudly if the derivative exceeds the target triangle count by more than a small tolerance. This prevents accidentally serving a near-master mesh when a source asset's topology blocks simplification. One observed example was the chess photogrammetry mesh: preserving its source normals allowed almost no triangle reduction, while removing and regenerating normals allowed the expected `288,557 -> 86,566` triangle reduction.
 
 `npm run generate:thumbnail` is intentionally a placeholder for now. The planned implementation should use the portal's PlayCanvas viewer in a headless browser so mesh and splat thumbnails match the real rendering behavior.
 
