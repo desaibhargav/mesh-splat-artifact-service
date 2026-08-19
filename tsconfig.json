@@ -12,5 +12,5 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["src", "tests", "prisma.config.ts"]
+  "include": ["src", "tests", "scripts", "prisma.config.ts", "prisma"]
 }

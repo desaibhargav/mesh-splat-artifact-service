@@ -15,6 +15,9 @@ fi
 git pull --ff-only
 npm ci
 npm run db:generate
+if [[ "${GENERATE_DERIVATIVES:-0}" == "1" ]]; then
+  npm run process:derivatives
+fi
 npm run db:seed
 npm run build
 

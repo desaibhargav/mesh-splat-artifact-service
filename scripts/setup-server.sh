@@ -73,6 +73,7 @@ echo "Save them now; the password is not stored in plaintext."
 echo
 echo "Place any non-downloaded assets under:"
 echo "  $APP_ROOT/data/assets"
+echo "  Place source/master files under $APP_ROOT/data/assets/master"
 echo
 echo "Then run:"
 echo "  ./scripts/deploy-server.sh"

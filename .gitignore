@@ -11,3 +11,6 @@ src/generated/prisma/
 data/assets/*
 !data/assets/.gitkeep
 !data/assets/README.md
+data/authorization/*
+!data/authorization/.gitkeep
+!data/authorization/README.md

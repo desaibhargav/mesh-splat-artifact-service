@@ -17,9 +17,9 @@ const assets = [
     title: "Scattering Skull",
     description: "A CC0 glTF sample by Vladimir Petkovic, published by Khronos Group.",
     type: "MESH" as const,
-    thumbnailPath: "scattering-skull.jpg",
-    contentPath: "scattering-skull.glb",
-    contentFilename: "scattering-skull.glb",
+    thumbnailPath: "thumbnails/scattering-skull.jpg",
+    contentPath: "derivatives/scattering-skull/content.glb",
+    contentFilename: "content.glb",
     mimeType: "model/gltf-binary"
   },
   {
@@ -29,9 +29,9 @@ const assets = [
     description: "A CC0 Gaussian splat sample published by WakuFactory.",
     type: "SPLAT" as const,
     thumbnailPath: null,
-    contentPath: "sakura-garden.ply",
-    contentFilename: "sakura-garden.ply",
-    mimeType: "application/octet-stream"
+    contentPath: "derivatives/sakura-garden/meta.json",
+    contentFilename: "meta.json",
+    mimeType: "application/json"
   },
   {
     id: "33333333-3333-4333-8333-333333333333",
@@ -40,8 +40,8 @@ const assets = [
     description: "A photogrammetry mesh of a chess set.",
     type: "MESH" as const,
     thumbnailPath: null,
-    contentPath: "chess-set-photogrammetry.glb",
-    contentFilename: "chess-set-photogrammetry.glb",
+    contentPath: "derivatives/chess-set-photogrammetry/content.glb",
+    contentFilename: "content.glb",
     mimeType: "model/gltf-binary"
   },
   {
@@ -50,8 +50,8 @@ const assets = [
     title: "Chess Set GS 31 Photos",
     description: "A Gaussian splat reconstruction of a chess set generated from 31 photographs.",
     type: "SPLAT" as const,
-    thumbnailPath: "chess-set-gs-31/thumbnail.webp",
-    contentPath: "chess-set-gs-31/meta.json",
+    thumbnailPath: "thumbnails/chess-set-gs-31.webp",
+    contentPath: "derivatives/chess-set-gs-31/meta.json",
     contentFilename: "meta.json",
     mimeType: "application/json"
   },
@@ -61,8 +61,8 @@ const assets = [
     title: "Chess Set GS 691 Photos",
     description: "A Gaussian splat reconstruction of a chess set generated from 691 photographs.",
     type: "SPLAT" as const,
-    thumbnailPath: "chess-set-gs-691/thumbnail.webp",
-    contentPath: "chess-set-gs-691/meta.json",
+    thumbnailPath: "thumbnails/chess-set-gs-691.webp",
+    contentPath: "derivatives/chess-set-gs-691/meta.json",
     contentFilename: "meta.json",
     mimeType: "application/json"
   }

@@ -13,7 +13,76 @@ For the AWS demonstration, this service and its public test assets run on a priv
 
 ## Repository boundary
 
-This repository owns catalog data and artifact delivery. The current local demonstration intentionally uses public source files directly. A separate preservation-master/web-derivative workflow is deferred to the next iteration and must be restored before restricted production collections are ingested.
+This repository owns catalog data, artifact delivery, and the server-side derivative pipeline.
+
+The production rule is:
+
+```text
+preservation master -> private processing -> public web derivative
+```
+
+Preservation masters must not be served by the portal. Public `/files` routes should point only at generated web derivatives under `data/assets`. Private derivative manifests and processing records belong under `data/authorization`, which is not part of the public asset route.
+
+The current demo seeds a small public collection whose content paths point at generated derivatives. Original/source files are present under `data/assets/master` as inputs for the pipeline, but catalog records should not point at preservation masters or raw source files.
+
+Directory convention:
+
+```text
+data/assets/master       source inputs for derivative processing
+data/assets/derivatives  generated web-viewer derivatives served through /files
+data/assets/thumbnails   public thumbnail images until the PlayCanvas thumbnail generator exists
+data/authorization        private processing manifests and server-side records
+```
+
+## Web derivative pipeline
+
+The pipeline uses maintained open-source libraries instead of custom geometry algorithms:
+
+- Meshes: `@gltf-transform/core`, `@gltf-transform/functions`, `@gltf-transform/extensions`, and `meshoptimizer`
+- Splats: `@playcanvas/splat-transform`
+
+Default policy:
+
+| Type | Public derivative rule |
+| --- | --- |
+| Mesh | Simplify to 30% of original triangle count, capped at 1,000,000 triangles; aggressive quantization; MeshOpt compression only. |
+| Splat | Decimate to 30% of original Gaussian count; convert to ordinary SOG; no Streamed SOG or LOD for now. |
+
+Generate a mesh derivative:
+
+```bash
+npm run process:mesh -- \
+  --input data/assets/master/scattering-skull.glb \
+  --output data/assets/derivatives/scattering-skull/content.glb \
+  --force
+```
+
+Generate a splat derivative:
+
+```bash
+npm run process:splat -- \
+  --input data/assets/master/sakura-garden.ply \
+  --output data/assets/derivatives/sakura-garden/meta.json \
+  --force
+```
+
+Generate derivatives for every new or updated source under `data/assets/master`:
+
+```bash
+npm run process:derivatives
+```
+
+The batch processor scans `data/assets/master` directly. It recognizes top-level `.glb` files as meshes, top-level `.ply` files as splats, and top-level directories containing `meta.json` as SOG splats. It ignores `data/assets/derivatives`. The script processes entries one at a time, prints progress as `[current/total]`, and skips derivatives that are already newer than their source. Use `npm run process:derivatives -- --force` to regenerate everything.
+
+The scripts write public-route-eligible derivatives under the path supplied with `--output`. They also write a private manifest under:
+
+```text
+data/authorization/derivative-manifests
+```
+
+That manifest records the source path, output path, file sizes, processing policy, tool versions, and whether simplification/decimation was applied. It is for server-side/admin review and should not be exposed through `/files`.
+
+`npm run generate:thumbnail` is intentionally a placeholder for now. The planned implementation should use the portal's PlayCanvas viewer in a headless browser so mesh and splat thumbnails match the real rendering behavior.
 
 ## Security boundary
 
@@ -68,16 +137,16 @@ First-time setup script inputs:
 | `SWAP_SIZE` | `2G` | Keep the default for `t3.micro`; increase if dependency installation/builds are still killed for memory. |
 | `FORCE_SETUP` | empty | Do not set during normal use. Set `FORCE_SETUP=1` only when intentionally regenerating setup values on a server. |
 
-The downloaded public demonstration assets are placed under:
+The downloaded public demonstration inputs are placed under:
 
 ```text
-data/assets
+data/assets/master
 ```
 
-Any assets not downloaded by the setup script, such as contributor-provided meshes, must be placed under that same directory before seeding/deployment. For example:
+Any assets not downloaded by the setup script, such as contributor-provided meshes, must be placed under that same directory before derivative generation and seeding/deployment. For example:
 
 ```text
-data/assets/chess-set-photogrammetry.glb
+data/assets/master/chess-set-photogrammetry.glb
 ```
 
 On the backend artifact-service instance, install PostgreSQL and create the application database:
@@ -143,7 +212,7 @@ The setup script downloads the public skull, Sakura, and chess splat files. The 
 ```bash
 scp -i /path/to/key.pem \
   "/Users/bhargavdesai/Desktop/[v2] Chess Set.glb" \
-  ubuntu@BACKEND_PUBLIC_IP:/home/ubuntu/mesh-splat-artifact-service/data/assets/chess-set-photogrammetry.glb
+  ubuntu@BACKEND_PUBLIC_IP:/home/ubuntu/mesh-splat-artifact-service/data/assets/master/chess-set-photogrammetry.glb
 ```
 
 The demo backend security group should allow SSH from the maintainer's IP and TCP `3000` only from the frontend gateway security group. It should not expose HTTP `80` or HTTPS `443` to the internet.
@@ -205,11 +274,20 @@ After PostgreSQL, `.env`, and assets have been configured once, future backend d
 
 The script pulls the latest `main`, installs dependencies from the lockfile, regenerates Prisma, reseeds artifact permissions for the server-local `DEMO_USERNAME`, rebuilds TypeScript, installs or updates the `systemd` service file, enables the service, and restarts it. It checks that `.env` exists before running. It does not contain SSH keys, passwords, IP addresses, or other secrets.
 
+Because the seed points at generated derivatives, a fresh server or a server missing `data/assets/derivatives` should run deployment with derivative generation enabled:
+
+```bash
+GENERATE_DERIVATIVES=1 ./scripts/deploy-server.sh
+```
+
+That opt-in mode runs `npm run process:derivatives` after `npm ci` and before `npm run db:seed`. Normal redeployments can omit the flag after derivatives already exist.
+
 Redeployment script inputs:
 
 | Variable | Default | How to choose it |
 | --- | --- | --- |
 | `SERVICE_NAME` | `mesh-splat-artifact-service` | Keep the default unless the systemd service should use a different name. |
+| `GENERATE_DERIVATIVES` | `0` | Set to `1` when derivatives need to be created before seeding. |
 
 ## Current status
 

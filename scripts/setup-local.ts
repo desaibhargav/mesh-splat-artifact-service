@@ -9,11 +9,14 @@ import { hash } from "argon2";
 
 const root = resolve(import.meta.dirname, "..");
 const assetRoot = resolve(root, "data/assets");
+const masterRoot = resolve(assetRoot, "master");
+const thumbnailRoot = resolve(assetRoot, "thumbnails");
 const envPath = resolve(root, ".env");
 const generatedUsername = `demo-${randomBytes(6).toString("hex")}`;
 const generatedPassword = randomBytes(15).toString("base64url");
 
-await mkdir(assetRoot, { recursive: true });
+await mkdir(masterRoot, { recursive: true });
+await mkdir(thumbnailRoot, { recursive: true });
 if (await exists(envPath)) {
   console.log("Existing .env preserved.");
 } else {
@@ -41,15 +44,15 @@ if (await exists(envPath)) {
 
 await download(
   "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/ScatteringSkull/glTF-Binary/ScatteringSkull.glb",
-  resolve(assetRoot, "scattering-skull.glb")
+  resolve(masterRoot, "scattering-skull.glb")
 );
 await download(
   "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/ScatteringSkull/screenshot/screenshot.jpg",
-  resolve(assetRoot, "scattering-skull.jpg")
+  resolve(thumbnailRoot, "scattering-skull.jpg")
 );
 await download(
   "https://www.wakufactory.jp/wxr/splats/data/sakura1.ply",
-  resolve(assetRoot, "sakura-garden.ply")
+  resolve(masterRoot, "sakura-garden.ply")
 );
 await downloadSog("8053365a", "chess-set-gs-31", {
   position: [0.39970365166664124, 0.5802445411682129, 1.5912868976593018],
@@ -63,7 +66,7 @@ await downloadSog("65d2e9d3", "chess-set-gs-691", {
 });
 
 console.log("Local public test assets are ready.");
-console.log("The contributor-provided chess mesh must be placed at data/assets/chess-set-photogrammetry.glb.");
+console.log("The contributor-provided chess mesh must be placed at data/assets/master/chess-set-photogrammetry.glb.");
 console.log("Next: create the mesh_splat database, then run npm run db:push and npm run db:seed.");
 
 interface PortalView {
@@ -85,14 +88,14 @@ async function downloadSog(sceneId: string, directory: string, portalView: Porta
     "shN_labels.webp"
   ];
   await Promise.all(
-    filenames.map((filename) => download(`${baseUrl}/${filename}`, resolve(assetRoot, directory, filename)))
+    filenames.map((filename) => download(`${baseUrl}/${filename}`, resolve(masterRoot, directory, filename)))
   );
   await download(
     `https://s3-eu-west-1.amazonaws.com/images.playcanvas.com/splat/${sceneId}/v1/xl.webp`,
-    resolve(assetRoot, directory, "thumbnail.webp")
+    resolve(thumbnailRoot, `${directory}.webp`)
   );
 
-  const metadataPath = resolve(assetRoot, directory, "meta.json");
+  const metadataPath = resolve(masterRoot, directory, "meta.json");
   const metadata = JSON.parse(await readFile(metadataPath, "utf8")) as Record<string, unknown>;
   await writeFile(metadataPath, JSON.stringify({ ...metadata, portalView }), { encoding: "utf8", mode: 0o600 });
 }
@@ -108,7 +111,10 @@ async function download(url: string, destination: string) {
   await mkdir(dirname(destination), { recursive: true });
   const temporary = `${destination}.partial`;
   try {
-    await pipeline(Readable.fromWeb(response.body), createWriteStream(temporary, { mode: 0o600 }));
+    await pipeline(
+      Readable.fromWeb(response.body as unknown as Parameters<typeof Readable.fromWeb>[0]),
+      createWriteStream(temporary, { mode: 0o600 })
+    );
     await rename(temporary, destination);
   } catch (error) {
     await rm(temporary, { force: true });
