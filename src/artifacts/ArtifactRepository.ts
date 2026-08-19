@@ -18,7 +18,6 @@ export interface ArtifactPage {
 }
 
 export interface ArtifactSearch {
-  subject: string;
   query?: string;
   type?: ArtifactType;
   cursor?: string;
@@ -26,6 +25,6 @@ export interface ArtifactSearch {
 }
 
 export interface ArtifactRepository {
-  searchAuthorized(search: ArtifactSearch): Promise<ArtifactPage>;
-  findAuthorizedById(subject: string, artifactId: string): Promise<ArtifactRecord | null>;
+  search(search: ArtifactSearch): Promise<ArtifactPage>;
+  findById(artifactId: string): Promise<ArtifactRecord | null>;
 }

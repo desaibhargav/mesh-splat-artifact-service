@@ -4,23 +4,18 @@ import { userInfo } from "node:os";
 import { dirname, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { randomBytes } from "node:crypto";
-import { hash } from "argon2";
 
 const root = resolve(import.meta.dirname, "..");
 const assetRoot = resolve(root, "data/assets");
 const masterRoot = resolve(assetRoot, "master");
 const thumbnailRoot = resolve(assetRoot, "thumbnails");
 const envPath = resolve(root, ".env");
-const generatedUsername = `demo-${randomBytes(6).toString("hex")}`;
-const generatedPassword = randomBytes(15).toString("base64url");
 
 await mkdir(masterRoot, { recursive: true });
 await mkdir(thumbnailRoot, { recursive: true });
 if (await exists(envPath)) {
   console.log("Existing .env preserved.");
 } else {
-  const passwordHash = await hash(generatedPassword, { type: 2 });
   const databaseUser = encodeURIComponent(userInfo().username);
   const environment = [
     "NODE_ENV=development",
@@ -28,18 +23,10 @@ if (await exists(envPath)) {
     "PORT=8080",
     `DATABASE_URL=postgresql://${databaseUser}@127.0.0.1:5432/mesh_splat`,
     "ARTIFACT_ROOT=./data/assets",
-    "AUTH_MODE=demo-session",
-    `DEMO_USERNAME=${generatedUsername}`,
-    `DEMO_PASSWORD_HASH=${passwordHash}`,
-    `DEMO_SESSION_KEY=${randomBytes(32).toString("hex")}`,
-    "DEMO_SESSION_TTL_SECONDS=3600",
     ""
   ].join("\n");
   await writeFile(envPath, environment, { encoding: "utf8", mode: 0o600 });
-  console.log("Created .env with local-only credentials:");
-  console.log(`  username: ${generatedUsername}`);
-  console.log(`  password: ${generatedPassword}`);
-  console.log("Save the password now; it is not stored in plaintext.");
+  console.log("Created .env for the public local portal.");
 }
 
 await download(

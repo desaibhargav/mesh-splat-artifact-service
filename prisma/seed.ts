@@ -6,8 +6,6 @@ import { createPrismaClient } from "../src/database.js";
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required.");
 const root = resolve(process.env.ARTIFACT_ROOT ?? "./data/assets");
-const demoUsername = process.env.DEMO_USERNAME ?? "demo-user";
-const demoSubject = `demo:${demoUsername}`;
 const prisma = createPrismaClient(databaseUrl);
 
 const assets = [
@@ -76,13 +74,8 @@ try {
       create: { ...asset, sizeBytes },
       update: { ...asset, sizeBytes }
     });
-    await prisma.artifactPermission.upsert({
-      where: { artifactId_userSubject: { artifactId: asset.id, userSubject: demoSubject } },
-      create: { artifactId: asset.id, userSubject: demoSubject, canView: true },
-      update: { canView: true }
-    });
   }
-  console.log(`Seeded ${assets.length} public demonstration artifacts with explicit permission for ${demoSubject}.`);
+  console.log(`Seeded ${assets.length} public demonstration artifacts.`);
 } finally {
   await prisma.$disconnect();
 }

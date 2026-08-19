@@ -1,23 +1,14 @@
 import "dotenv/config";
 import { buildApp } from "./app.js";
-import { OidcAccessTokenVerifier } from "./auth/AccessTokenVerifier.js";
-import {
-  DemoSessionRequestAuthenticator,
-  OidcBearerRequestAuthenticator
-} from "./auth/RequestAuthenticator.js";
 import { PrismaArtifactRepository } from "./artifacts/PrismaArtifactRepository.js";
 import { loadConfig } from "./config.js";
 import { createPrismaClient } from "./database.js";
 
 const config = loadConfig();
 const prisma = createPrismaClient(config.databaseUrl);
-const authenticator = config.auth.mode === "oidc-bearer"
-  ? new OidcBearerRequestAuthenticator(new OidcAccessTokenVerifier(config.auth))
-  : new DemoSessionRequestAuthenticator();
 const app = await buildApp({
   config,
-  repository: new PrismaArtifactRepository(prisma),
-  authenticator
+  repository: new PrismaArtifactRepository(prisma)
 });
 
 async function close(signal: string) {

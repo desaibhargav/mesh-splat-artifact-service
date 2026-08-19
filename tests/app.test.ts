@@ -1,11 +1,7 @@
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { hash } from "argon2";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
-import type { AccessTokenVerifier } from "../src/auth/AccessTokenVerifier.js";
-import { OidcBearerRequestAuthenticator } from "../src/auth/RequestAuthenticator.js";
-import { DemoSessionRequestAuthenticator } from "../src/auth/RequestAuthenticator.js";
 import type {
   ArtifactRecord,
   ArtifactRepository,
@@ -36,27 +32,18 @@ const sogArtifact: ArtifactRecord = {
   mimeType: "application/json"
 };
 
-const verifier: AccessTokenVerifier = {
-  async verify(token) {
-    if (token === "valid-token") return { subject: "demo-user" };
-    if (token === "attacker-token") return { subject: "attacker" };
-    throw new Error("invalid");
-  }
-};
-const authenticator = new OidcBearerRequestAuthenticator(verifier);
-
 class TestRepository implements ArtifactRepository {
   lastSearch?: ArtifactSearch;
 
-  constructor(private readonly record: ArtifactRecord = artifact) {}
+  constructor(private readonly record: ArtifactRecord | null = artifact) {}
 
-  async searchAuthorized(search: ArtifactSearch) {
+  async search(search: ArtifactSearch) {
     this.lastSearch = search;
-    return { items: [this.record], nextCursor: null };
+    return { items: this.record ? [this.record] : [], nextCursor: null };
   }
 
-  async findAuthorizedById(subject: string, artifactId: string) {
-    return subject === "demo-user" && artifactId === this.record.id ? this.record : null;
+  async findById(artifactId: string) {
+    return artifactId === this.record?.id ? this.record : null;
   }
 }
 
@@ -65,13 +52,7 @@ const config: AppConfig = {
   host: "127.0.0.1",
   port: 8080,
   databaseUrl: "postgresql://unused",
-  artifactRoot: resolve("tests/fixtures"),
-  auth: {
-    mode: "oidc-bearer",
-    issuer: "https://identity.example.edu",
-    audience: "test",
-    jwksUri: "https://identity.example.edu/jwks"
-  }
+  artifactRoot: resolve("tests/fixtures")
 };
 
 let app: FastifyInstance | undefined;
@@ -80,155 +61,57 @@ afterEach(async () => {
   app = undefined;
 });
 
-describe("artifact security boundary", () => {
-  it("rejects a catalog request without a bearer token", async () => {
-    app = await buildApp({ config, repository: new TestRepository(), authenticator });
-    const response = await app.inject({ method: "GET", url: "/api/v1/artifacts" });
-    expect(response.statusCode).toBe(401);
-    expect(response.json().error.code).toBe("authentication_required");
-  });
-
-  it("does not trust an identity header supplied by the gateway", async () => {
-    app = await buildApp({ config, repository: new TestRepository(), authenticator });
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/v1/artifacts",
-      headers: { "x-authenticated-user": "demo-user" }
-    });
-    expect(response.statusCode).toBe(401);
-  });
-
-  it("filters catalog results using the independently verified subject", async () => {
+describe("public artifact catalog", () => {
+  it("returns catalog results without authentication", async () => {
     const repository = new TestRepository();
-    app = await buildApp({ config, repository, authenticator });
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/v1/artifacts?query=test&type=mesh",
-      headers: { authorization: "Bearer valid-token" }
-    });
+    app = await buildApp({ config, repository });
+    const response = await app.inject({ method: "GET", url: "/api/v1/artifacts?query=test&type=mesh" });
     expect(response.statusCode).toBe(200);
-    expect(repository.lastSearch?.subject).toBe("demo-user");
+    expect(repository.lastSearch).toMatchObject({ query: "test", type: "mesh", limit: 24 });
     expect(response.json().items[0].contentUrl).toBe(`/files/${artifact.id}/test-model.glb`);
   });
 
-  it("rechecks artifact authorization before returning file bytes", async () => {
-    app = await buildApp({ config, repository: new TestRepository(), authenticator });
-    const response = await app.inject({
-      method: "GET",
-      url: `/files/${artifact.id}/test-model.glb`,
-      headers: { authorization: "Bearer valid-token" }
-    });
+  it("returns one public artifact by id", async () => {
+    app = await buildApp({ config, repository: new TestRepository() });
+    const response = await app.inject({ method: "GET", url: `/api/v1/artifacts/${artifact.id}` });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().id).toBe(artifact.id);
+  });
+});
+
+describe("public derivative file boundary", () => {
+  it("returns registered derivative file bytes without authentication", async () => {
+    app = await buildApp({ config, repository: new TestRepository() });
+    const response = await app.inject({ method: "GET", url: `/files/${artifact.id}/test-model.glb` });
     expect(response.statusCode).toBe(200);
     expect(response.headers["cache-control"]).toBe("private, no-store");
     expect(response.body).toBe("test-model\n");
   });
 
-  it("limits a valid token to that subject's artifact permissions", async () => {
-    app = await buildApp({ config, repository: new TestRepository(), authenticator });
-    const response = await app.inject({
-      method: "GET",
-      url: `/files/${artifact.id}/test-model.glb`,
-      headers: { authorization: "Bearer attacker-token" }
-    });
+  it("returns registered thumbnail bytes without authentication", async () => {
+    app = await buildApp({ config, repository: new TestRepository() });
+    const response = await app.inject({ method: "GET", url: `/files/${artifact.id}/thumbnail` });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("image/webp");
+  });
+
+  it("allows SOG component files only within the registered derivative directory", async () => {
+    app = await buildApp({ config, repository: new TestRepository(sogArtifact) });
+    const response = await app.inject({ method: "GET", url: `/files/${sogArtifact.id}/means_l.webp` });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("image/webp");
+    expect(response.headers["cache-control"]).toBe("private, no-store");
+  });
+
+  it("does not serve unregistered files for mesh artifacts", async () => {
+    app = await buildApp({ config, repository: new TestRepository() });
+    const response = await app.inject({ method: "GET", url: `/files/${artifact.id}/other-file.glb` });
     expect(response.statusCode).toBe(404);
   });
 
-  it("rechecks authorization for every component of a streamed SOG artifact", async () => {
-    app = await buildApp({ config, repository: new TestRepository(sogArtifact), authenticator });
-    const authorized = await app.inject({
-      method: "GET",
-      url: `/files/${sogArtifact.id}/means_l.webp`,
-      headers: { authorization: "Bearer valid-token" }
-    });
-    expect(authorized.statusCode).toBe(200);
-    expect(authorized.headers["content-type"]).toContain("image/webp");
-    expect(authorized.headers["cache-control"]).toBe("private, no-store");
-
-    const unauthorized = await app.inject({
-      method: "GET",
-      url: `/files/${sogArtifact.id}/means_l.webp`,
-      headers: { authorization: "Bearer attacker-token" }
-    });
-    expect(unauthorized.statusCode).toBe(404);
-  });
-
-  it("returns 404 instead of revealing an unauthorized artifact", async () => {
-    const repository: ArtifactRepository = {
-      async searchAuthorized() {
-        return { items: [], nextCursor: null };
-      },
-      async findAuthorizedById() {
-        return null;
-      }
-    };
-    app = await buildApp({ config, repository, authenticator });
-    const response = await app.inject({
-      method: "GET",
-      url: `/files/${artifact.id}/test-model.glb`,
-      headers: { authorization: "Bearer valid-token" }
-    });
+  it("returns 404 for unknown artifacts", async () => {
+    app = await buildApp({ config, repository: new TestRepository(null) });
+    const response = await app.inject({ method: "GET", url: `/files/${artifact.id}/test-model.glb` });
     expect(response.statusCode).toBe(404);
-  });
-});
-
-describe("temporary demo-user authentication adapter", () => {
-  it("issues an encrypted session and uses it on protected artifact requests", async () => {
-    const demoConfig: AppConfig = {
-      ...config,
-      auth: {
-        mode: "demo-session",
-        username: "demo-user",
-        passwordHash: await hash("correct-horse-battery-staple"),
-        sessionKey: Buffer.alloc(32, 7),
-        sessionTtlSeconds: 3_600
-      }
-    };
-    app = await buildApp({
-      config: demoConfig,
-      repository: new TestRepository(),
-      authenticator: new DemoSessionRequestAuthenticator()
-    });
-
-    const login = await app.inject({
-      method: "POST",
-      url: "/api/v1/auth/session",
-      payload: { username: "demo-user", password: "correct-horse-battery-staple" }
-    });
-    expect(login.statusCode).toBe(204);
-    const cookie = login.cookies.find(({ name }) => name === "mesh_splat_demo");
-    expect(cookie?.httpOnly).toBe(true);
-    expect(cookie?.sameSite).toBe("Strict");
-
-    const catalog = await app.inject({
-      method: "GET",
-      url: "/api/v1/artifacts",
-      cookies: { mesh_splat_demo: cookie?.value ?? "" }
-    });
-    expect(catalog.statusCode).toBe(200);
-  });
-
-  it("does not issue a session for invalid demo credentials", async () => {
-    const demoConfig: AppConfig = {
-      ...config,
-      auth: {
-        mode: "demo-session",
-        username: "demo-user",
-        passwordHash: await hash("correct-password"),
-        sessionKey: Buffer.alloc(32, 9),
-        sessionTtlSeconds: 3_600
-      }
-    };
-    app = await buildApp({
-      config: demoConfig,
-      repository: new TestRepository(),
-      authenticator: new DemoSessionRequestAuthenticator()
-    });
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/v1/auth/session",
-      payload: { username: "demo-user", password: "wrong-password" }
-    });
-    expect(response.statusCode).toBe(401);
-    expect(response.cookies).toHaveLength(0);
   });
 });

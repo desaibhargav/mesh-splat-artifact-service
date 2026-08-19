@@ -1,6 +1,6 @@
 # Mesh–Splat Artifact Service
 
-The API responsible for the artifact catalog, server-side search, authorization boundaries, metadata, thumbnails, and protected delivery of mesh and Gaussian-splat files.
+The API responsible for the public artifact catalog, server-side search, object/file boundary checks, metadata, thumbnails, and delivery of mesh and Gaussian-splat web derivatives.
 
 ## Intended stack
 
@@ -86,11 +86,19 @@ That manifest records the source path, output path, file sizes, processing polic
 
 ## Security boundary
 
-The temporary demo adapter verifies an Argon2 password and issues an encrypted, HttpOnly, SameSite session cookie. The future production adapter independently verifies IU OIDC identity. Neither mode trusts identity headers supplied by Nginx. Catalog queries return only artifacts visible to the verified subject, and metadata, thumbnail, and content routes repeat that authorization check before returning anything.
+The current portal is intentionally public: anyone who can reach the gateway URL can view the catalog and public web derivatives.
 
-Every artifact requires an explicit `(artifactId, userSubject)` permission. Authentication alone never grants collection-wide access. Unauthorized lookups return 404 to avoid confirming that an artifact exists.
+Even without login, the service keeps important server-side boundaries:
 
-Protected files are served only from the configured asset root with browser/proxy caching disabled. An authorized browser still receives the bytes needed for client-side rendering; this is not download prevention.
+- The browser never receives direct filesystem paths or raw storage locations.
+- Catalog records point only at generated derivatives, not preservation masters.
+- `/files/:artifactId/content/:filename` serves only the exact registered content file for that artifact.
+- SOG splats may request component files beside their registered `meta.json`, but still only inside that artifact's registered derivative directory.
+- Dotfiles and path traversal are denied.
+- Unknown artifact IDs and unregistered files return 404.
+- Browser/proxy caching is disabled for file responses as a conservative demo policy.
+
+This protects against accidental exposure and simple URL guessing. It does not prevent a user from copying bytes that are intentionally delivered to their browser for client-side rendering. If IU later requires restricted artifacts, authentication and per-artifact authorization should be reintroduced before serving those records.
 
 ## Run locally
 
@@ -108,9 +116,9 @@ npm run db:seed
 npm run dev
 ```
 
-`npm run setup:local` creates an ignored `.env`, prints a generated local username and password once, and downloads public CC0 demonstration assets. It does not overwrite an existing `.env` or existing assets. If Homebrew services are unavailable, start PostgreSQL directly with the `pg_ctl` command printed by Homebrew.
+`npm run setup:local` creates an ignored `.env` and downloads public demonstration assets. It does not overwrite an existing `.env` or existing assets. If Homebrew services are unavailable, start PostgreSQL directly with the `pg_ctl` command printed by Homebrew.
 
-The generated demo subject receives explicit permission for both seeded artifacts. The included files are Khronos Group's CC0 Scattering Skull sample and WakuFactory's CC0 Sakura splat sample.
+The included starter files are public demonstration assets such as Khronos Group's CC0 Scattering Skull sample and WakuFactory's CC0 Sakura splat sample. Confirm licensing before adding any new public demo asset.
 
 ## AWS demo deployment notes
 
@@ -122,9 +130,9 @@ For a fresh backend server, run the first-time setup script from an SSH session:
 ./scripts/setup-server.sh
 ```
 
-The setup script installs PostgreSQL, starts/enables it, creates the `ubuntu` database role and `mesh_splat` database if needed, assigns a URL-safe database password, creates 2 GiB of swap if needed, runs `npm ci`, creates a server-local `.env`, rewrites it with production backend defaults, and pushes the Prisma schema to PostgreSQL. It prints the generated demo username and password once; save them immediately because the password is not stored in plaintext. It does not contain SSH keys, public IPs, demo passwords, or private artifact files.
+The setup script installs PostgreSQL plus the Vulkan runtime packages needed by `splat-transform`, starts/enables PostgreSQL, creates the `ubuntu` database role and `mesh_splat` database if needed, assigns a URL-safe database password, creates 2 GiB of swap if needed, runs `npm ci`, creates a server-local `.env`, rewrites it with production backend defaults, and pushes the Prisma schema to PostgreSQL. It does not contain SSH keys, public IPs, passwords, or private artifact files.
 
-The setup script refuses to overwrite an existing `.env` by default. Redeployments should use `./scripts/deploy-server.sh`; they preserve the existing username, password hash, session key, and database password.
+The setup script refuses to overwrite an existing `.env` by default. Redeployments should use `./scripts/deploy-server.sh`; they preserve the existing database password and server-local configuration.
 
 First-time setup script inputs:
 
@@ -149,10 +157,10 @@ Any assets not downloaded by the setup script, such as contributor-provided mesh
 data/assets/master/chess-set-photogrammetry.glb
 ```
 
-On the backend artifact-service instance, install PostgreSQL and create the application database:
+If doing setup manually instead of using `./scripts/setup-server.sh`, install PostgreSQL, Vulkan support for splat processing, and create the application database:
 
 ```bash
-sudo apt install -y postgresql postgresql-contrib
+sudo apt install -y postgresql postgresql-contrib libvulkan1 mesa-vulkan-drivers vulkan-tools
 sudo systemctl enable postgresql
 sudo systemctl start postgresql
 sudo -u postgres createuser ubuntu
@@ -206,6 +214,15 @@ npm run build
 ```
 
 `npm run build` also runs `prisma generate`, so repeated Prisma client generation is expected and harmless.
+
+If updating an older authenticated database to the current public schema, remove obsolete permission tables with:
+
+```bash
+npm run db:push -- --accept-data-loss
+npm run db:seed
+```
+
+Use that command only for this demo database or after confirming the removed tables are no longer needed.
 
 The setup script downloads the public skull, Sakura, and chess splat files. The contributor-provided chess mesh is not stored in Git. Upload it before seeding if the seed expects it:
 
@@ -272,7 +289,7 @@ After PostgreSQL, `.env`, and assets have been configured once, future backend d
 ./scripts/deploy-server.sh
 ```
 
-The script pulls the latest `main`, installs dependencies from the lockfile, regenerates Prisma, reseeds artifact permissions for the server-local `DEMO_USERNAME`, rebuilds TypeScript, installs or updates the `systemd` service file, enables the service, and restarts it. It checks that `.env` exists before running. It does not contain SSH keys, passwords, IP addresses, or other secrets.
+The script pulls the latest `main`, installs dependencies from the lockfile, regenerates Prisma, reseeds the public artifact catalog, rebuilds TypeScript, installs or updates the `systemd` service file, enables the service, and restarts it. It checks that `.env` exists before running. It does not contain SSH keys, passwords, IP addresses, or other secrets.
 
 Because the seed points at generated derivatives, a fresh server or a server missing `data/assets/derivatives` should run deployment with derivative generation enabled:
 
@@ -291,4 +308,4 @@ Redeployment script inputs:
 
 ## Current status
 
-The service includes the temporary session adapter, OIDC/JWKS adapter, per-artifact authorization, cursor-paginated server-side search, protected range-capable file delivery, security headers, rate limiting, a fixed Prisma/PostgreSQL schema, graceful shutdown, and security-focused route tests.
+The service includes a public catalog API, cursor-paginated server-side search, object/file boundary checks, range-capable derivative file delivery, security headers, rate limiting, a fixed Prisma/PostgreSQL schema, graceful shutdown, derivative processing scripts, and security-focused route tests.

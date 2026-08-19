@@ -4,16 +4,13 @@ import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import { ZodError } from "zod";
 import type { AppConfig } from "./config.js";
-import type { RequestAuthenticator } from "./auth/RequestAuthenticator.js";
 import type { ArtifactRepository } from "./artifacts/ArtifactRepository.js";
 import { registerArtifactRoutes } from "./artifacts/artifactRoutes.js";
 import { HttpError } from "./errors/HttpError.js";
-import { registerDemoSession } from "./auth/demoSession.js";
 
 export interface AppDependencies {
   config: AppConfig;
   repository: ArtifactRepository;
-  authenticator: RequestAuthenticator;
 }
 
 export async function buildApp(dependencies: AppDependencies): Promise<FastifyInstance> {
@@ -37,13 +34,6 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     max: 300,
     timeWindow: "1 minute"
   });
-  if (dependencies.config.auth.mode === "demo-session") {
-    await registerDemoSession(
-      app,
-      dependencies.config.auth,
-      dependencies.config.environment === "production"
-    );
-  }
   await app.register(fastifyStatic, {
     root: dependencies.config.artifactRoot,
     serve: false

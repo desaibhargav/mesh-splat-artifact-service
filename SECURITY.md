@@ -3,26 +3,24 @@
 ## Trust boundaries
 
 - The public gateway is not an identity authority.
-- The artifact service accepts only credentials it can independently validate.
-- `X-Authenticated-User` and similar gateway-supplied identity headers are ignored.
-- The gateway must not have a universal service credential that can read every restricted artifact.
+- The current portal is public and does not authenticate viewers.
+- `X-Authenticated-User` and similar gateway-supplied identity headers are ignored because the service does not use viewer identity.
 - PostgreSQL and the artifact service must not be publicly reachable.
+- Preservation masters must not be served through `/files`.
 
 ## Artifact access
 
-Every catalog, metadata, thumbnail, and content request is authenticated. Every artifact-specific request is then authorized against the verified subject. Authentication alone never grants access to an artifact.
+Every catalog, metadata, thumbnail, and content request is public. Artifact-specific file requests still pass through object/file boundary checks: the artifact must exist, and the requested file must be the registered mesh derivative or a SOG component in the registered derivative directory.
 
-The current demonstration exposes only its public test assets. It deliberately does not yet implement the agreed web-derivative pipeline. No IU preservation master or restricted IU data may be placed in `ARTIFACT_ROOT` until that work and IU policy review are complete.
+The current demonstration exposes only public test derivatives. No IU preservation master or restricted IU data may be placed in a public route. Source/master files belong under `data/assets/master`; catalog records should point only at `data/assets/derivatives` and `data/assets/thumbnails`.
 
-## Temporary authentication
+## Public viewing limitation
 
-The demo adapter stores only an Argon2 password hash and places the verified subject in an encrypted, HttpOnly, SameSite session cookie. Sessions expire after one hour by default. Authentication routes are rate-limited, and application logs redact authorization and cookie headers.
-
-Nginx forwards the session cookie and therefore remains a sensitive component. Compromise of the gateway could permit theft and replay of a live user's session; independently repeating authorization at the artifact service prevents invented identity headers and over-broad gateway service credentials, but it cannot make a compromised TLS endpoint harmless. The private network boundary, short session life, least-privilege artifact permissions, patching, and monitoring remain required.
+A public browser receives the derivative bytes needed for client-side rendering. This is not download prevention. Asset protection relies on serving only intentionally degraded web derivatives, omitting download UI, rate limiting, avoiding public master paths, and keeping source/preservation files outside the served catalog.
 
 ## Known deployment work
 
 - Configure Nginx to stream `/files/` responses without proxy caching or storage.
 - Restrict the service network listener to the gateway.
-- Replace demo authentication with IU OIDC configuration before using IU data.
+- Reintroduce authentication/authorization only if IU policy later requires restricted artifacts.
 - Add production monitoring, backups, and security-event retention before handling restricted data.

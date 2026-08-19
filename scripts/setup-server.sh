@@ -20,7 +20,7 @@ DB_PASSWORD="${DB_PASSWORD:-$(openssl rand -hex 24)}"
 
 if command -v apt-get >/dev/null 2>&1; then
   sudo apt-get update
-  sudo apt-get install -y postgresql postgresql-contrib
+  sudo apt-get install -y postgresql postgresql-contrib libvulkan1 mesa-vulkan-drivers vulkan-tools
 else
   echo "This setup script expects an apt-based Linux server such as Ubuntu." >&2
   exit 1
@@ -68,8 +68,6 @@ npm run db:push
 echo
 echo "Server prerequisites are ready."
 echo "Review .env before deployment. This script set production server defaults for NODE_ENV, HOST, PORT, and DATABASE_URL."
-echo "The generated demo username and password were printed above by npm run setup:local."
-echo "Save them now; the password is not stored in plaintext."
 echo
 echo "Place any non-downloaded assets under:"
 echo "  $APP_ROOT/data/assets"

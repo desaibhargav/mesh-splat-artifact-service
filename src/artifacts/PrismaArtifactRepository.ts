@@ -9,10 +9,7 @@ import type {
 export class PrismaArtifactRepository implements ArtifactRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async searchAuthorized(search: ArtifactSearch): Promise<ArtifactPage> {
-    const permissionFilter = {
-      permissions: { some: { userSubject: search.subject, canView: true } }
-    };
+  async search(search: ArtifactSearch): Promise<ArtifactPage> {
     const queryFilter = search.query
       ? {
           OR: [
@@ -25,7 +22,6 @@ export class PrismaArtifactRepository implements ArtifactRepository {
     const records = await this.prisma.artifact.findMany({
       where: {
         AND: [
-          permissionFilter,
           queryFilter,
           search.type ? { type: search.type.toUpperCase() as "MESH" | "SPLAT" } : {}
         ]
@@ -43,12 +39,9 @@ export class PrismaArtifactRepository implements ArtifactRepository {
     };
   }
 
-  async findAuthorizedById(subject: string, artifactId: string): Promise<ArtifactRecord | null> {
+  async findById(artifactId: string): Promise<ArtifactRecord | null> {
     const record = await this.prisma.artifact.findFirst({
-      where: {
-        id: artifactId,
-        permissions: { some: { userSubject: subject, canView: true } }
-      }
+      where: { id: artifactId }
     });
     return record ? toRecord(record) : null;
   }

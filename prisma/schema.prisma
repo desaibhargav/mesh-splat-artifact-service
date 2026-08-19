@@ -25,20 +25,8 @@ model Artifact {
   sizeBytes      BigInt
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
-  permissions    ArtifactPermission[]
 
   @@index([type, id])
   @@index([title])
   @@map("artifacts")
-}
-
-model ArtifactPermission {
-  artifactId String   @db.Uuid
-  userSubject String
-  canView     Boolean  @default(true)
-  artifact    Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
-
-  @@id([artifactId, userSubject])
-  @@index([userSubject, artifactId])
-  @@map("artifact_permissions")
 }
