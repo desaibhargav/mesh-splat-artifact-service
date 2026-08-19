@@ -19,6 +19,7 @@
     "process:splat": "tsx scripts/process-splat-derivative.ts",
     "process:derivatives": "tsx scripts/process-derivatives.ts",
     "generate:thumbnail": "tsx scripts/generate-thumbnail.ts",
+    "generate:thumbnails": "tsx scripts/generate-thumbnails.ts",
     "setup:local": "tsx scripts/setup-local.ts"
   },
   "dependencies": {
@@ -41,6 +42,7 @@
     "@types/pg": "8.23.1",
     "meshoptimizer": "1.2.0",
     "prisma": "7.9.1",
+    "puppeteer": "25.8.0",
     "tsx": "4.23.12",
     "typescript": "7.0.2",
     "vitest": "4.1.10"

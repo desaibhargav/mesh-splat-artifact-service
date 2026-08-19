@@ -15,7 +15,7 @@ const assets = [
     title: "Scattering Skull",
     description: "A CC0 glTF sample by Vladimir Petkovic, published by Khronos Group.",
     type: "MESH" as const,
-    thumbnailPath: "thumbnails/scattering-skull.jpg",
+    thumbnailPath: "thumbnails/scattering-skull.webp",
     contentPath: "derivatives/scattering-skull/content.glb",
     contentFilename: "content.glb",
     mimeType: "model/gltf-binary"
@@ -26,7 +26,7 @@ const assets = [
     title: "Sakura Garden",
     description: "A CC0 Gaussian splat sample published by WakuFactory.",
     type: "SPLAT" as const,
-    thumbnailPath: null,
+    thumbnailPath: "thumbnails/sakura-garden.webp",
     contentPath: "derivatives/sakura-garden/meta.json",
     contentFilename: "meta.json",
     mimeType: "application/json"
@@ -37,7 +37,7 @@ const assets = [
     title: "Chess Set Photogrammetry",
     description: "A photogrammetry mesh of a chess set.",
     type: "MESH" as const,
-    thumbnailPath: null,
+    thumbnailPath: "thumbnails/chess-set-photogrammetry.webp",
     contentPath: "derivatives/chess-set-photogrammetry/content.glb",
     contentFilename: "content.glb",
     mimeType: "model/gltf-binary"

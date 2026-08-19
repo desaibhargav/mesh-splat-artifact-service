@@ -30,7 +30,7 @@ Directory convention:
 ```text
 data/assets/master       source inputs for derivative processing
 data/assets/derivatives  generated web-viewer derivatives served through /files
-data/assets/thumbnails   public thumbnail images until the PlayCanvas thumbnail generator exists
+data/assets/thumbnails   generated public thumbnail images
 data/authorization        private processing manifests and server-side records
 ```
 
@@ -84,7 +84,47 @@ That manifest records the source path, output path, file sizes, processing polic
 
 Mesh simplification is required, not best-effort. The script fails loudly if the derivative exceeds the target triangle count by more than a small tolerance. This prevents accidentally serving a near-master mesh when a source asset's topology blocks simplification. One observed example was the chess photogrammetry mesh: preserving its source normals allowed almost no triangle reduction, while removing and regenerating normals allowed the expected `288,557 -> 86,566` triangle reduction.
 
-`npm run generate:thumbnail` is intentionally a placeholder for now. The planned implementation should use the portal's PlayCanvas viewer in a headless browser so mesh and splat thumbnails match the real rendering behavior.
+## Thumbnail generation
+
+Thumbnails are generated from derivatives, not masters. This keeps catalog images aligned with what the public viewer can actually load.
+
+Generate one mesh thumbnail:
+
+```bash
+npm run generate:thumbnail -- \
+  --type mesh \
+  --input data/assets/derivatives/scattering-skull/content.glb \
+  --output data/assets/thumbnails/scattering-skull.webp \
+  --force
+```
+
+Generate one splat thumbnail:
+
+```bash
+npm run generate:thumbnail -- \
+  --type splat \
+  --input data/assets/derivatives/sakura-garden/meta.json \
+  --output data/assets/thumbnails/sakura-garden.webp \
+  --force
+```
+
+Generate or refresh thumbnails for every derivative under `data/assets/derivatives`:
+
+```bash
+npm run generate:thumbnails
+```
+
+The batch generator scans `data/assets/derivatives` directly. It recognizes derivative directories containing `content.glb` as meshes and directories containing `meta.json` as splats. It processes entries one at a time, prints progress as `[current/total]`, and skips thumbnails that are already newer than their derivative. Use `npm run generate:thumbnails -- --force` to regenerate everything.
+
+Mesh and splat thumbnails use Puppeteer with Puppeteer's bundled Chrome for Testing. The bundled browser is preferred deliberately: Puppeteer chooses a compatible browser revision for the installed Puppeteer version. The script starts a temporary local-only PlayCanvas render page, loads the derivative with the same PlayCanvas asset types used by the portal (`container` for GLB meshes, `gsplat` for SOG splats), applies the same camera-fit approach as the viewer, screenshots the canvas, and writes WebP.
+
+On AWS/Linux, the server needs the shared libraries required by Chrome for Testing. `./scripts/setup-server.sh` calls:
+
+```bash
+./scripts/install-thumbnail-browser.sh
+```
+
+That helper installs the required Linux libraries and then runs `npx puppeteer browsers install chrome`. If this browser is missing, thumbnail generation fails clearly instead of silently switching to an arbitrary system browser.
 
 ## Security boundary
 
@@ -132,7 +172,7 @@ For a fresh backend server, run the first-time setup script from an SSH session:
 ./scripts/setup-server.sh
 ```
 
-The setup script installs PostgreSQL plus the Vulkan runtime packages needed by `splat-transform`, starts/enables PostgreSQL, creates the `ubuntu` database role and `mesh_splat` database if needed, assigns a URL-safe database password, creates 2 GiB of swap if needed, runs `npm ci`, creates a server-local `.env`, rewrites it with production backend defaults, and pushes the Prisma schema to PostgreSQL. It does not contain SSH keys, public IPs, passwords, or private artifact files.
+The setup script installs PostgreSQL, Vulkan runtime packages needed by `splat-transform`, and the Linux shared libraries needed by Puppeteer's bundled Chrome. It starts/enables PostgreSQL, creates the `ubuntu` database role and `mesh_splat` database if needed, assigns a URL-safe database password, creates 2 GiB of swap if needed, runs `npm ci`, installs Puppeteer's bundled Chrome for Testing, creates a server-local `.env`, rewrites it with production backend defaults, and pushes the Prisma schema to PostgreSQL. It does not contain SSH keys, public IPs, passwords, or private artifact files.
 
 The setup script refuses to overwrite an existing `.env` by default. Redeployments should use `./scripts/deploy-server.sh`; they preserve the existing database password and server-local configuration.
 
@@ -159,10 +199,12 @@ Any assets not downloaded by the setup script, such as contributor-provided mesh
 data/assets/master/chess-set-photogrammetry.glb
 ```
 
-If doing setup manually instead of using `./scripts/setup-server.sh`, install PostgreSQL, Vulkan support for splat processing, and create the application database:
+If doing setup manually instead of using `./scripts/setup-server.sh`, install PostgreSQL, Vulkan support for splat processing, Chrome-for-Testing dependencies for mesh thumbnails, and create the application database:
 
 ```bash
 sudo apt install -y postgresql postgresql-contrib libvulkan1 mesa-vulkan-drivers vulkan-tools
+npm ci
+./scripts/install-thumbnail-browser.sh
 sudo systemctl enable postgresql
 sudo systemctl start postgresql
 sudo -u postgres createuser ubuntu
@@ -207,7 +249,6 @@ PORT=3000
 Run setup and database commands:
 
 ```bash
-npm ci
 npm run setup:local
 npm run db:push
 npm run db:generate
@@ -301,12 +342,27 @@ GENERATE_DERIVATIVES=1 ./scripts/deploy-server.sh
 
 That opt-in mode runs `npm run process:derivatives` after `npm ci` and before `npm run db:seed`. Normal redeployments can omit the flag after derivatives already exist.
 
+To also generate or refresh thumbnails on the backend server during deployment:
+
+```bash
+GENERATE_THUMBNAILS=1 ./scripts/deploy-server.sh
+```
+
+That opt-in mode first runs `./scripts/install-thumbnail-browser.sh`, then runs `npm run generate:thumbnails`. This makes an existing AWS backend work even if it was originally set up before the thumbnail pipeline existed.
+
+On a fresh server, run both steps together after source assets are in `data/assets/master`:
+
+```bash
+GENERATE_DERIVATIVES=1 GENERATE_THUMBNAILS=1 ./scripts/deploy-server.sh
+```
+
 Redeployment script inputs:
 
 | Variable | Default | How to choose it |
 | --- | --- | --- |
 | `SERVICE_NAME` | `mesh-splat-artifact-service` | Keep the default unless the systemd service should use a different name. |
 | `GENERATE_DERIVATIVES` | `0` | Set to `1` when derivatives need to be created before seeding. |
+| `GENERATE_THUMBNAILS` | `0` | Set to `1` when thumbnails need to be created or refreshed from derivatives before seeding. |
 
 ## Current status
 

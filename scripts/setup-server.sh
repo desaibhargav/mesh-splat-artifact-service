@@ -54,6 +54,7 @@ if ! grep -q "^${SWAPFILE} " /etc/fstab; then
 fi
 
 npm ci
+./scripts/install-thumbnail-browser.sh
 npm run setup:local
 
 sed -i \

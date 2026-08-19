@@ -18,6 +18,10 @@ npm run db:generate
 if [[ "${GENERATE_DERIVATIVES:-0}" == "1" ]]; then
   npm run process:derivatives
 fi
+if [[ "${GENERATE_THUMBNAILS:-0}" == "1" ]]; then
+  ./scripts/install-thumbnail-browser.sh
+  npm run generate:thumbnails
+fi
 npm run db:seed
 npm run build
 
