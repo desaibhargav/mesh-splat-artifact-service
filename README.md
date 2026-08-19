@@ -45,7 +45,7 @@ Default policy:
 
 | Type | Public derivative rule |
 | --- | --- |
-| Mesh | Simplify to 30% of original triangle count, capped at 1,000,000 triangles; aggressive quantization; MeshOpt compression only. |
+| Mesh | Simplify to 30% of original triangle count, capped at 1,000,000 triangles, using MeshOpt's simplifier; aggressive quantization; no emitted `EXT_meshopt_compression` until the viewer path supports it reliably. |
 | Splat | Decimate to 30% of original Gaussian count; convert to ordinary SOG; no Streamed SOG or LOD for now. |
 
 Generate a mesh derivative:

@@ -1,7 +1,7 @@
 import { NodeIO, Primitive } from "@gltf-transform/core";
-import { ALL_EXTENSIONS, EXTMeshoptCompression } from "@gltf-transform/extensions";
-import { dedup, meshopt, prune, quantize, simplify, weld } from "@gltf-transform/functions";
-import { MeshoptDecoder, MeshoptEncoder, MeshoptSimplifier } from "meshoptimizer";
+import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
+import { dedup, prune, quantize, simplify, weld } from "@gltf-transform/functions";
+import { MeshoptDecoder, MeshoptSimplifier } from "meshoptimizer";
 import {
   defaultManifestPath,
   fileSize,
@@ -20,14 +20,12 @@ async function main() {
   await prepareOutput(options.output, options.force);
   await prepareOutput(manifestPath, true);
   await MeshoptDecoder.ready;
-  await MeshoptEncoder.ready;
   await MeshoptSimplifier.ready;
 
   const io = new NodeIO()
     .registerExtensions(ALL_EXTENSIONS)
     .registerDependencies({
-      "meshopt.decoder": MeshoptDecoder,
-      "meshopt.encoder": MeshoptEncoder
+      "meshopt.decoder": MeshoptDecoder
     });
 
   const document = await io.read(options.input);
@@ -54,24 +52,9 @@ async function main() {
       quantizeGeneric: 8,
       normalizeWeights: true
     }),
-    meshopt({
-      encoder: MeshoptEncoder,
-      level: "high",
-      quantizePosition: 10,
-      quantizeNormal: 8,
-      quantizeTexcoord: 10,
-      quantizeColor: 8,
-      quantizeWeight: 8,
-      quantizeGeneric: 8
-    }),
     prune({ keepExtras: false, keepAttributes: false }),
     dedup()
   );
-
-  document
-    .createExtension(EXTMeshoptCompression)
-    .setRequired(true)
-    .setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.QUANTIZE });
 
   await io.write(options.output, document);
   const derivativeTriangles = countTriangles(document);
@@ -105,7 +88,10 @@ async function main() {
         weightBits: 8,
         genericBits: 8
       },
-      compression: "MeshOpt",
+      compression: "none",
+      meshoptCompressionEmitted: false,
+      meshoptSimplifierUsed: true,
+      meshoptCompressionDeferredReason: "Current PlayCanvas viewer path did not reliably load required EXT_meshopt_compression derivatives.",
       dracoFallback: false,
       publicScaleMetadata: false
     },
