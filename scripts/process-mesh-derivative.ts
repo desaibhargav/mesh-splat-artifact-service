@@ -46,7 +46,7 @@ async function main() {
       quantizationVolume: "mesh",
       quantizePosition: 10,
       quantizeNormal: 8,
-      quantizeTexcoord: 10,
+      quantizeTexcoord: 12,
       quantizeColor: 8,
       quantizeWeight: 8,
       quantizeGeneric: 8,
@@ -83,7 +83,7 @@ async function main() {
       quantization: {
         positionBits: 10,
         normalBits: 8,
-        texcoordBits: 10,
+        texcoordBits: 12,
         colorBits: 8,
         weightBits: 8,
         genericBits: 8
