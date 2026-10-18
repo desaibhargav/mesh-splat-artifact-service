@@ -2,6 +2,8 @@
 
 The API responsible for the public artifact catalog, server-side search, object/file boundary checks, metadata, thumbnails, and delivery of mesh and Gaussian-splat web derivatives.
 
+For ongoing development, read [project instructions](AGENTS.md), which record the owner's standing architecture, code-quality, security, and delivery preferences.
+
 ## Intended stack
 
 - Node.js and TypeScript

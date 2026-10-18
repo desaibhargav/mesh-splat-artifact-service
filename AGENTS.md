@@ -1,0 +1,13 @@
+# Project instructions
+
+This service and `mesh-splat-portal-web` form one visualization suite. The owner's broader [project principles](https://github.com/desaibhargav/mesh-splat-portal-web/blob/main/docs/project-principles.md) describe the shared direction; the essential instructions below apply independently to this checkout.
+
+- Keep ingestion, validation, publication, metadata, and delivery workflows shared for meshes and splats. Dispatch format-specific derivative stages behind clear interfaces rather than duplicating pipelines. Preserve the same portal tool experience and contracts across formats.
+- Reuse maintained processing libraries and existing scripts. Check installed versions and source before assuming capabilities. PlayCanvas APIs and its official React integration are the first choice for corresponding viewer work.
+- Keep code lean, general, and explicit. Avoid speculative abstractions, duplicate logic, dumb fallback chains, asset-specific constants, and scattered special cases. Derive behavior from metadata and centralize actual processing policy/configuration. Do not silently repair corrupt masters or invent physical calibration.
+- Preserve the boundary `preservation master -> private processing -> public web derivative`. Masters and private processing manifests must never be exposed by public file routes. Security must survive public source code and known paths; hiding paths or a download button is not access control. Keep credentials and private records out of Git.
+- Viewer colors, selections, annotations, and measurements are non-destructive view data. Any future persistence must validate data and bind geometry-dependent records to the derivative revision. Do not add server-write endpoints merely to support local saved views.
+- Heavy derivative/thumbnail processing currently runs on macOS; AWS serves the outputs. Transfer with checksums, then use the catalog publication script. Use current deployment configuration rather than historical public IPs. Keep temporary scripts, original assets, generated outputs, and private manifests out of code commits.
+- Implement incrementally and run proportionate meaningful checks. Review both repositories for contract changes. Commit/push reusable code, then pull/deploy on AWS; distinguish completed work from deferred features. Complete routine authorized work without adding unnecessary confirmation steps, while respecting actual permission boundaries.
+
+The frontend's `TODO.md` tracks deferred saved views, WebXR, selection accuracy, thumbnails/turntables, and other viewer features. Do not start them implicitly while changing backend infrastructure. Read this repository's README for current processing commands, policy, storage boundaries, and deployment details.
