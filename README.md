@@ -84,6 +84,36 @@ That manifest records the source path, output path, file sizes, processing polic
 
 Mesh simplification is required, not best-effort. The script fails loudly if the derivative exceeds the target triangle count by more than a small tolerance. This prevents accidentally serving a near-master mesh when a source asset's topology blocks simplification. One observed example was the chess photogrammetry mesh: preserving its source normals allowed almost no triangle reduction, while removing and regenerating normals allowed the expected `288,557 -> 86,566` triangle reduction.
 
+## Publish processed assets
+
+After derivative and thumbnail generation, register the completed assets with:
+
+```bash
+npm run catalog:sync
+```
+
+The command scans `derivatives/<slug>/` under `ARTIFACT_ROOT` (default `data/assets`), recognizes `content.glb` meshes and `meta.json` SOG splats, and requires a matching `thumbnails/<slug>.webp`. SOG metadata must reference complete, nonempty texture files in its own directory; extra files and symlinks are rejected. Only generated derivatives are registered; masters and private processing manifests are never scanned.
+
+Records are matched by registered content path or slug. Existing IDs, slugs, titles, and descriptions are preserved; delivery paths, type, MIME type, thumbnail path, and size are refreshed. New records use the directory slug as their provisional title and an empty description. No records are deleted. Rerunning is safe, and publishing needs no service restart.
+
+Incomplete assets and catalog identity conflicts are reported individually, while other assets continue. The command exits nonzero if any asset is skipped. Missing files do not unpublish an existing catalog record.
+
+Validate the files without connecting to PostgreSQL or publishing:
+
+```bash
+npm run catalog:sync -- --dry-run
+```
+
+Use `--asset-root /path/to/assets` to override `ARTIFACT_ROOT`. Dry-run validates files only; catalog identity conflicts are checked during synchronization. This command does not generate derivatives or thumbnails. `db:seed` remains the separate initializer for the five named demonstration records.
+
+The complete manual workflow is:
+
+```bash
+npm run process:derivatives
+npm run generate:thumbnails
+npm run catalog:sync
+```
+
 ## Thumbnail generation
 
 Thumbnails are generated from derivatives, not masters. This keeps catalog images aligned with what the public viewer can actually load.

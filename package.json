@@ -15,6 +15,7 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "catalog:sync": "tsx scripts/sync-catalog.ts",
     "process:mesh": "tsx scripts/process-mesh-derivative.ts",
     "process:splat": "tsx scripts/process-splat-derivative.ts",
     "process:derivatives": "tsx scripts/process-derivatives.ts",
