@@ -72,7 +72,36 @@ PLY recovery uses the vendored, MIT-licensed RPly decoder and writer rather than
 
 Valid files are decoded once and passed through without copying. Single-element files are scanned to EOF, allowing underreported as well as overreported counts. Multiple element blocks follow declared boundaries; extra data after completed blocks is rejected as ambiguous. Malformed numeric data, invalid schemas/list counts, and I/O errors fail instead of silently truncating the asset. Recovered `obj_info` metadata is preserved as comments for the pinned PlayCanvas reader. The writer preserves represented scalar precision, not original text formatting or NaN payload bits. PlayCanvas compatibility/processing failures still abort. Temporary outputs are removed on success or failure, and existing output paths are never overwritten.
 
-Processing requires C/C++ compilers: macOS Command Line Tools (`xcode-select --install`) or Ubuntu `build-essential`. On first PLY input the helper compiles locally and caches its binary under ignored `node_modules/.cache/ply-recovery`; subsequent files reuse it. This adds no browser code or running-server dependency. See [RPly provenance, local guards, recovery limits, and build details](vendor/rply/README.md). The current supported processing environments are macOS and Linux. Both `process:splat` and the batch processor use this step.
+Processing requires C/C++ compilers: macOS Command Line Tools (`xcode-select --install`) or Ubuntu `build-essential`. On first PLY input the helper compiles locally and caches its binary under ignored `node_modules/.cache/ply-recovery`; subsequent files reuse it. This adds no browser code or running-server dependency. See [RPly provenance, local guards, recovery limits, and build details](vendor/rply/README.md). macOS is verified; Linux is an intended target with the migration gap below still open. Both `process:splat` and the batch processor use this step.
+
+### Open gap: move processing back to AWS
+
+macOS processing is a temporary arrangement. The intended future deployment runs
+the complete pipeline on AWS. Serving transferred derivatives on AWS does not
+verify that processing works there. As of 2026-10-19, the RPly integration has only
+been executed on macOS; Linux compilation/execution and the complete updated
+pipeline on the target AWS instance remain unverified.
+
+Before switching processing hosts:
+
+- Pull the backend code and install its pinned dependencies on the target AWS
+  processing host. Add `build-essential` to processing-host provisioning; do not
+  assume the current setup scripts install the newly required C/C++ toolchain.
+- Compile RPly from a clean checkout/cache on Linux. Run the recovery tests across
+  all three encodings, variable-length lists, malformed inputs, and truncation;
+  verify numerical fidelity, master preservation, exclusive output creation, and
+  temporary-file cleanup. A Mac binary/cache must not be copied as a Linux binary.
+- Exercise the full mesh and splat batch workflow, including the real truncated
+  master, filtering/decimation, SOG compression, thumbnails, private manifests, and
+  catalog publication. Verify compiler, Vulkan/compute, and browser dependencies
+  under the actual processing user's permissions.
+- Measure runtime, peak RAM/compute use, temporary disk requirements, and especially
+  SOG k-means performance on the chosen instance. The current small serving
+  instance's health is not evidence that it is adequate for processing.
+
+Keep this gap open until those checks pass on the target Linux/AWS environment and
+their results are recorded. This is deferred migration work, not a current AWS
+deployment instruction; macOS remains the verified processing host meanwhile.
 
 Generate derivatives for every new or updated source under `data/assets/master`:
 

@@ -51,6 +51,10 @@ or Ubuntu `build-essential` provide them. This does not add a native dependency 
 the running artifact API or the browser bundle. The helper targets the project's
 macOS/Linux processing environments (64-bit `long`/file offsets).
 
+Only macOS execution has been verified. Linux/AWS compilation and pipeline
+integration remain an [open migration gap](../../README.md#open-gap-move-processing-back-to-aws);
+do not infer verification from the intended platform support or AWS serving health.
+
 The adapter makes one decoding pass for valid files. If recovery is necessary,
 a second pass streams complete records through RPly's writer; it does not allocate
 a full vertex array or buffer an entire variable-length record. A staged file is
