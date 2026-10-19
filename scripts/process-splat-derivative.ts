@@ -1,6 +1,7 @@
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { recoverPly } from "./ply-recovery.js";
 import {
   defaultManifestPath,
   fileSize,
@@ -19,14 +20,16 @@ async function main() {
   const tempDir = await mkdtemp(resolve(tmpdir(), "mesh-splat-splat-"));
   const decimatedPly = resolve(tempDir, "decimated.ply");
 
-  await prepareOutput(options.output, options.force);
-  await prepareOutput(manifestPath, true);
-
   try {
+    await prepareOutput(options.output, options.force);
+    await prepareOutput(manifestPath, true);
+    const prepared = await recoverPly(options.input, resolve(tempDir, "recovered.ply"));
+    // The native loader validates this input before filtering/decimation. A failed
+    // load still aborts processing; recovery does not bypass PlayCanvas checks.
     await run("npx", [
       "splat-transform",
       "--overwrite",
-      options.input,
+      prepared.input,
       "--filter-nan",
       "--decimate",
       TARGET_RATIO_PERCENT,
@@ -40,7 +43,8 @@ async function main() {
       generatedAt: new Date().toISOString(),
       source: {
         inputPath: options.input,
-        inputBytes: await fileSize(options.input)
+        inputBytes: await fileSize(options.input),
+        ...(prepared.recovery ? { recovery: prepared.recovery } : {})
       },
       derivative: {
         outputPath: options.output,

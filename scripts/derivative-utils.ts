@@ -1,6 +1,7 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, parse, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import type { PlyRecovery } from "./ply-recovery.js";
 
 export interface CommonDerivativeOptions {
   input: string;
@@ -16,6 +17,7 @@ export interface DerivativeManifest {
   source: {
     inputPath: string;
     inputBytes: number;
+    recovery?: PlyRecovery;
   };
   derivative: {
     outputPath: string;

@@ -68,6 +68,10 @@ npm run process:splat -- \
   --force
 ```
 
+For an uncompressed binary little-endian PLY with one fixed-size vertex element, the splat stage checks the header count against the available bytes. If they differ, it streams complete records into a temporary copy, corrects the count, normalizes header line endings for PlayCanvas, and drops any partial final record. A prominent warning reports declared/recovered counts and discarded bytes. The preservation master stays unchanged. PlayCanvas then loads the recovered copy, runs the existing NaN filter, decimates to 30% of the recovered count, and generates SOG normally. Loader/processing failures still abort; missing data is not reconstructed.
+
+The private manifest records recovery under `source.recovery`, including original declared count, recovered count, record size, expected source size, and discarded bytes. Valid PLYs need only a header/size check and are not copied. SOG and other non-PLY inputs bypass recovery; compressed, ASCII, list-valued, and multi-element PLYs remain with the native loader because their record count cannot be inferred with this fixed-width rule. Empty/unrecoverable inputs fail rather than inventing vertices. Temporary recovery files are removed on success or failure. This behavior applies to both `process:splat` and the batch processor.
+
 Generate derivatives for every new or updated source under `data/assets/master`:
 
 ```bash
