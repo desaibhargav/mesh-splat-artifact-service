@@ -90,3 +90,27 @@ uncorrupted; a truncated numeric ASCII token may itself still be a valid number.
 RPly follows declared element counts, so underreported counts and ambiguous block
 boundaries need separate policy. Neither parser can infer the cause of the missing
 bytes, reconstruct missing records, or universally resynchronize after corruption.
+
+## Shipped integration
+
+The pipeline now uses RPly through `scripts/ply-recovery.ts` and a streaming native
+adapter, replacing the application's header regex/token parser. See
+[`vendor/rply/README.md`](../vendor/rply/README.md) for the pinned release,
+reproducible local patch, build requirements, and exact guarantees. Earlier
+"no production change" statements above describe the initial evaluation only.
+The parser and writer now run on real processing inputs; retained-record policy
+and pipeline coordination remain application responsibilities.
+
+Integration validation: all 52 backend tests (35 recovery cases), TypeScript, and
+the production build passed. Address/undefined-behavior sanitizers passed on 123
+fixtures and every byte prefix of an ASCII header/payload example. Cleanup is
+asserted after successful and failed recovery tests. On the real damaged asset,
+recovery retained 875,352 vertices and discarded 70 bytes in approximately 1.6
+seconds on the development Mac with the helper cached. The recovered payload hash
+matched the surviving source payload byte for byte:
+`c29fc8d22ae230aaf23afb9858151fe7213461ae8720615286a9be8485875476`.
+PlayCanvas's actual CLI then loaded, filtered NaNs, and decimated the recovered
+file successfully with GPU access. That integration's temporary files were removed;
+the preservation master was unchanged. This is a local measurement, not a portable
+performance guarantee. Linux execution and a full SOG re-encode were not repeated
+for this change; no viewer code changed.

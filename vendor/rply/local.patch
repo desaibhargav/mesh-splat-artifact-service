@@ -1,0 +1,84 @@
+--- a/rply.c
++++ b/rply.c
+@@ -13 +13 @@
+-#include <limits.h>
++#include <math.h>
+@@ -17,0 +18,2 @@
++#include <errno.h>
++#include <math.h>
+@@ -194,0 +197 @@
++    e_ply_error read_error;
+@@ -321 +324 @@
+-    /* check if read failed */
++    /* Token reads may still succeed from buffered bytes after EOF. */
+@@ -438,0 +442,11 @@
++}
++
++e_ply_error ply_get_read_error(p_ply ply) { return ply->read_error; }
++long ply_get_read_position(p_ply ply) {
++    return ftell(ply->fp) - (long) BSIZE(ply);
++}
++e_ply_storage_mode ply_get_storage_mode(p_ply ply) { return ply->storage_mode; }
++int ply_set_element_count(p_ply_element element, long count) {
++    if (count < 0) return 0;
++    element->ninstances = count;
++    return 1;
+@@ -645 +659,3 @@
+-    if (ply->welement > ply->nelements) return 0;
++    while (ply->welement < ply->nelements && !ply->element[ply->welement].ninstances)
++        ply->welement++;
++    if (ply->welement >= ply->nelements) return 0;
+@@ -680,2 +696 @@
+-            element = &ply->element[ply->welement];
+-        } while (ply->welement < ply->nelements && !element->ninstances);
++        } while (ply->welement < ply->nelements && !ply->element[ply->welement].ninstances);
+@@ -823 +838 @@
+-    int l;
++    long l;
+@@ -831,0 +847,4 @@
++        return 0;
++    }
++    if (length < 0) {
++        ply_ferror(ply, "Invalid list length");
+@@ -964,0 +984 @@
++                ply->read_error = ferror(ply->fp) ? PLY_ERROR_IO : PLY_ERROR_EOF;
+@@ -1002 +1022 @@
+-    BSKIP(ply, 1);
++    if (ply->buffer_first < ply->buffer_last) BSKIP(ply, 1);
+@@ -1061 +1081,4 @@
+-            if (ply->buffer_last <= 0) return 0;
++            if (ply->buffer_last <= 0) {
++                ply->read_error = ferror(ply->fp) ? PLY_ERROR_IO : PLY_ERROR_EOF;
++                return 0;
++            }
+@@ -1244 +1267,2 @@
+-        if (property->length_type == (e_ply_type) (-1)) return 0;
++        if (property->length_type < PLY_INT8 || property->length_type >= PLY_LIST ||
++                property->length_type % 8 >= 6) return 0;
+@@ -1247 +1271 @@
+-        if (property->value_type == (e_ply_type) (-1)) return 0;
++        if (property->value_type < PLY_INT8 || property->value_type >= PLY_LIST) return 0;
+@@ -1269 +1293,4 @@
+-    if (sscanf(BWORD(ply), "%ld", &dummy) != 1) {
++    char *count_end;
++    errno = 0;
++    dummy = strtol(BWORD(ply), &count_end, 10);
++    if (errno || *count_end || dummy < 0) {
+@@ -1289,0 +1317 @@
++    if (ply->read_error == PLY_ERROR_NONE) ply->read_error = PLY_ERROR_DATA;
+@@ -1291 +1319 @@
+-    vsprintf(buffer, fmt, ap);
++    vsnprintf(buffer, sizeof(buffer), fmt, ap);
+@@ -1404 +1432 @@
+-    if (value > FLT_MAX || value < -FLT_MAX) return 0;
++    if (isfinite(value) && (value > FLT_MAX || value < -FLT_MAX)) return 0;
+--- a/rply.h
++++ b/rply.h
+@@ -35,0 +36,7 @@
++
++/* Local recovery diagnostics: no parser internals exposed to the caller. */
++typedef enum { PLY_ERROR_NONE, PLY_ERROR_DATA, PLY_ERROR_EOF, PLY_ERROR_IO } e_ply_error;
++e_ply_error ply_get_read_error(p_ply ply);
++long ply_get_read_position(p_ply ply);
++e_ply_storage_mode ply_get_storage_mode(p_ply ply);
++int ply_set_element_count(p_ply_element element, long count);
