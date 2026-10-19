@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createChunkDataPool, MemoryReadFileSystem, readPly } from "@playcanvas/splat-transform";
+import { createChunkDataPool, MemoryReadFileSystem, readFileInfo, readPly } from "@playcanvas/splat-transform";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { recoverPly } from "../scripts/ply-recovery.js";
 
@@ -88,4 +88,39 @@ it("derives record width from mixed scalar properties rather than a fixed GS sch
   await writeFile(f.input, Buffer.concat([Buffer.from(header), payload]));
   expect((await recoverPly(f.input, f.output)).recovery).toMatchObject({ recordBytes: stride, recoveredVertices: 3, discardedBytes: 3 });
   expect((await readFile(f.output)).subarray(-3 * stride)).toEqual(payload.subarray(0, 3 * stride));
+});
+
+it("accepts ordinary header spacing and rewrites the parsed vertex declaration", async () => {
+  const f = await fixture(10, 3);
+  const header = f.header.replace("format binary_little_endian 1.0", "format   binary_little_endian  1.0")
+    .replace("element vertex 10", "element   vertex   10").replaceAll("property float", "property  float");
+  await writeFile(f.input, Buffer.concat([Buffer.from(header), f.payload]));
+  const result = await recoverPly(f.input, f.output);
+  expect(result.recovery?.recoveredVertices).toBe(3);
+  const fs = new MemoryReadFileSystem(), pool = createChunkDataPool();
+  fs.set("recovered.ply", await readFile(result.input));
+  const source = await readPly(await fs.createSource("recovered.ply"), pool);
+  try { expect(source.meta.numGaussians).toBe(3); }
+  finally { await source.close(); pool.destroy(); }
+});
+
+it("does not rewrite malformed element or property declarations", async () => {
+  const f = await fixture(10, 3);
+  for (const header of [f.header.replace("vertex 10", "vertex 10 extra"),
+    f.header.replace("property float x", "property float x extra"),
+    f.header.replace("property float x", "property constructor x")]) {
+    await writeFile(f.input, Buffer.concat([Buffer.from(header), f.payload]));
+    expect(await recoverPly(f.input, f.output)).toEqual({ input: f.input });
+  }
+  expect(console.warn).not.toHaveBeenCalled();
+});
+
+it("keeps native validation: public metadata reads reject the source and accept the recovered copy", async () => {
+  const f = await fixture(10, 3);
+  const fs = new MemoryReadFileSystem(); fs.set("source.ply", f.bytes);
+  await expect(readFileInfo({ filename: "source.ply", inputFormat: "ply", fileSystem: fs })).rejects.toThrow("header-implied");
+  const result = await recoverPly(f.input, f.output);
+  fs.set("recovered.ply", await readFile(result.input));
+  expect(await readFileInfo({ filename: "recovered.ply", inputFormat: "ply", fileSystem: fs }))
+    .toMatchObject({ numGaussians: 3, gaussian: true });
 });
