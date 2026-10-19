@@ -59,3 +59,34 @@ variable-length lists require payload scanning. Incorrect counts across multiple
 element blocks can leave boundaries ambiguous even when the header is fully
 parsed. A general parser therefore does not justify applying the current
 `floor(payloadBytes / recordBytes)` repair to every PLY.
+
+## RPly callback evaluation
+
+The desired broader recovery boundary is a decoder that exposes completed records
+before failure, rather than only header metadata. Tested the official RPly 1.1.4
+distribution from <https://w3.impa.br/~diego/software/rply/> on 2026-10-19 with a
+temporary C++ adapter linked to unmodified `rply.c`. Public element/property
+iteration identifies each element's last property. A callback on that property
+increments the completed-record count only after the scalar, final list entry, or
+empty list has decoded. RPly handles all preceding properties and parsing failures.
+
+Eleven cases passed: incomplete scalar records, incomplete face lists, and valid
+empty/nonempty lists in each of ASCII, binary little-endian, and binary big-endian;
+an invalid ASCII numeric token; and the real truncated master. On that master the
+callbacks counted 875,352 complete vertices before `ply_read` reported failure,
+independently confirming the fixed-width helper's recovered count. The probe counts
+records; it does not yet spool their values, write a recovered file, or integrate
+with the pipeline. Evaluation artifacts are under `/private/tmp/rply-1.1.4`.
+
+RPly also exposes `ply_write_header`, unlike Tinyply's internal header-only writer.
+It is a more suitable candidate for library-decoded prefix recovery. Integration
+would still need completed-record buffering/spooling, corrected counts, output
+validation, native build setup, and performance checks. Its callbacks pass numeric
+values as doubles; numeric round trips are not a guarantee of byte-identical payloads.
+No production dependency or processing behavior changed in this evaluation.
+
+Limits remain explicit: a completed record means syntactically decoded, not proven
+uncorrupted; a truncated numeric ASCII token may itself still be a valid number.
+RPly follows declared element counts, so underreported counts and ambiguous block
+boundaries need separate policy. Neither parser can infer the cause of the missing
+bytes, reconstruct missing records, or universally resynchronize after corruption.
