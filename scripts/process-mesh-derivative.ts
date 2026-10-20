@@ -1,7 +1,3 @@
-import { writeLodCorrespondence } from "./lod-correspondence.js";
-import { mkdir, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
-import { LOD_POLICY_VERSION, assertLodCount, lodTargets } from "../src/artifacts/lodPolicy.js";
 import { NodeIO, Primitive } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { dedup, normals, prune, quantize, simplify, weld } from "@gltf-transform/functions";
@@ -11,12 +7,12 @@ import {
   fileSize,
   parseCommonArgs,
   prepareOutput,
-  directorySize,
-  stageDerivative,
-  validateDerivativePaths,
   writeManifest
 } from "./derivative-utils.js";
 
+const TARGET_RATIO = 0.3;
+const MAX_TRIANGLES = 1_000_000;
+const SIMPLIFICATION_TOLERANCE = 1.05;
 
 async function main() {
   const options = parseCommonArgs(process.argv.slice(2));
@@ -24,7 +20,6 @@ async function main() {
 
   await prepareOutput(options.output, options.force);
   await prepareOutput(manifestPath, true);
-  await validateDerivativePaths(options, manifestPath);
   await MeshoptDecoder.ready;
   await MeshoptSimplifier.ready;
 
@@ -34,35 +29,39 @@ async function main() {
       "meshopt.decoder": MeshoptDecoder
     });
 
-  const source = await io.read(options.input);
-  const originalTriangles = countTriangles(source);
-  const levels = await stageDerivative(options.output, options.force, async directory => {
-    const records = [];
-    for (const target of lodTargets(originalTriangles)) {
-      // Reload the master for every level: never simplify an already reduced LOD.
-      const document = await io.read(options.input);
-      removeNormals(document);
-      await document.transform(
-        prune({ keepExtras: false, keepAttributes: false }), dedup(), weld(),
-        simplify({ simplifier: MeshoptSimplifier, ratio: target.ratio, error: 1, lockBorder: false }),
-        normals({ overwrite: true }),
-        quantize({ quantizationVolume: "mesh", quantizePosition: 10, quantizeNormal: 8,
-          quantizeTexcoord: 12, quantizeColor: 8, quantizeWeight: 8, quantizeGeneric: 8, normalizeWeights: true }),
-        prune({ keepExtras: false, keepAttributes: false }), dedup()
-      );
-      const count = countTriangles(document);
-      assertLodCount(count, target.count);
-      const file = target.level === 0 ? basename(options.output) : `lod/${target.level}/content.glb`;
-      await mkdir(join(directory, file, ".."), { recursive: true });
-      await io.write(join(directory, file), document);
-      records.push({ ...target, count, file });
-    }
-    const editing = await writeLodCorrespondence(directory, "mesh", records);
-    await writeFile(join(directory, "lod.json"), JSON.stringify({
-      version: LOD_POLICY_VERSION, kind: "mesh", levels: records, editing
-    }, null, 2));
-    return { records, bytes: await directorySize(directory) };
-  });
+  const document = await io.read(options.input);
+  const originalTriangles = countTriangles(document);
+  const appliedRatio = originalTriangles > 0 ? Math.min(TARGET_RATIO, MAX_TRIANGLES / originalTriangles) : TARGET_RATIO;
+  const removedNormals = removeNormals(document);
+
+  await document.transform(
+    prune({ keepExtras: false, keepAttributes: false }),
+    dedup(),
+    weld(),
+    simplify({
+      simplifier: MeshoptSimplifier,
+      ratio: appliedRatio,
+      error: 1,
+      lockBorder: false
+    }),
+    normals({ overwrite: true }),
+    quantize({
+      quantizationVolume: "mesh",
+      quantizePosition: 10,
+      quantizeNormal: 8,
+      quantizeTexcoord: 12,
+      quantizeColor: 8,
+      quantizeWeight: 8,
+      quantizeGeneric: 8,
+      normalizeWeights: true
+    }),
+    prune({ keepExtras: false, keepAttributes: false }),
+    dedup()
+  );
+
+  const derivativeTriangles = countTriangles(document);
+  assertSimplificationTarget(originalTriangles, derivativeTriangles, appliedRatio);
+  await io.write(options.output, document);
 
   await writeManifest(manifestPath, {
     schemaVersion: 1,
@@ -73,16 +72,21 @@ async function main() {
     },
     derivative: {
       outputPath: options.output,
-      outputBytes: levels.bytes,
+      outputBytes: await fileSize(options.output),
       publicRouteEligible: true
     },
     policy: {
       kind: "mesh",
       simplificationRequired: true,
-      lodPolicyVersion: LOD_POLICY_VERSION,
-      levels: levels.records,
+      targetRatio: TARGET_RATIO,
+      appliedRatio,
+      maxTriangles: MAX_TRIANGLES,
       originalTriangles,
+      derivativeTriangles,
+      weldBeforeSimplify: true,
+      normalsRemovedBeforeSimplify: removedNormals,
       normalsRegeneratedAfterSimplify: true,
+      simplificationTolerance: SIMPLIFICATION_TOLERANCE,
       quantization: {
         positionBits: 10,
         normalBits: 8,
@@ -110,7 +114,7 @@ async function main() {
 
   console.log(`Wrote mesh derivative: ${options.output}`);
   console.log(`Wrote private manifest: ${manifestPath}`);
-  console.log(`Triangles: ${originalTriangles} -> ${levels.records.map(level => level.count).join(" / ")}`);
+  console.log(`Triangles: ${originalTriangles} -> ${derivativeTriangles}`);
 }
 
 function removeNormals(document: Awaited<ReturnType<NodeIO["read"]>>): number {
@@ -127,18 +131,38 @@ function removeNormals(document: Awaited<ReturnType<NodeIO["read"]>>): number {
   return removed;
 }
 
+function assertSimplificationTarget(
+  originalTriangles: number,
+  derivativeTriangles: number,
+  appliedRatio: number
+): void {
+  if (originalTriangles === 0) return;
+
+  const allowedTriangles = Math.ceil(originalTriangles * appliedRatio * SIMPLIFICATION_TOLERANCE);
+  if (derivativeTriangles <= allowedTriangles) return;
+
+  throw new Error(
+    [
+      "Mesh simplification did not reach the required target.",
+      `Original triangles: ${originalTriangles}.`,
+      `Derivative triangles: ${derivativeTriangles}.`,
+      `Allowed triangles with tolerance: ${allowedTriangles}.`,
+      "The derivative was not written, preventing accidental publication of a near-master mesh.",
+      "Inspect the source topology and consider a more destructive fallback policy for this asset."
+    ].join(" ")
+  );
+}
+
 function countTriangles(document: Awaited<ReturnType<NodeIO["read"]>>): number {
-  const scene = document.getRoot().getDefaultScene() ?? document.getRoot().listScenes()[0];
-  if (!scene) throw new Error("Mesh source has no scene.");
   let triangles = 0;
-  scene.traverse(node => {
-    for (const primitive of node.getMesh()?.listPrimitives() ?? []) {
+  for (const mesh of document.getRoot().listMeshes()) {
+    for (const primitive of mesh.listPrimitives()) {
       if (primitive.getMode() !== Primitive.Mode.TRIANGLES) continue;
       const indices = primitive.getIndices();
       const position = primitive.getAttribute("POSITION");
       triangles += Math.floor((indices?.getCount() ?? position?.getCount() ?? 0) / 3);
     }
-  });
+  }
   return triangles;
 }
 

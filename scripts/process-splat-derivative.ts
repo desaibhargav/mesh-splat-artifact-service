@@ -1,65 +1,42 @@
-import { writeLodCorrespondence } from "./lod-correspondence.js";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { LOD_POLICY_VERSION, assertLodCount, lodTargets } from "../src/artifacts/lodPolicy.js";
-import { splatInfo } from "./splat-info.js";
 import { recoverPly } from "./ply-recovery.js";
 import {
   defaultManifestPath,
   fileSize,
-  directorySize,
-  stageDerivative,
-  validateDerivativePaths,
   parseCommonArgs,
   prepareOutput,
   run,
   writeManifest
 } from "./derivative-utils.js";
 
+const TARGET_RATIO = 0.3;
+const TARGET_RATIO_PERCENT = "30%";
 
 async function main() {
   const options = parseCommonArgs(process.argv.slice(2));
   const manifestPath = options.manifest ?? defaultManifestPath(options.output);
   const tempDir = await mkdtemp(resolve(tmpdir(), "mesh-splat-splat-"));
+  const decimatedPly = resolve(tempDir, "decimated.ply");
 
   try {
     await prepareOutput(options.output, options.force);
     await prepareOutput(manifestPath, true);
-    await validateDerivativePaths(options, manifestPath);
     const prepared = await recoverPly(options.input, resolve(tempDir, "recovered.ply"));
-    const sourceInfo = await splatInfo(prepared.input);
-    if (!sourceInfo.gaussian) throw new Error("The source does not contain Gaussian splat data.");
-    const targets = lodTargets(sourceInfo.numGaussians);
-    const levels = await stageDerivative(options.output, options.force, async directory => {
-      const records: ReturnType<typeof lodTargets> = [];
-      const taggedInputs: string[] = [];
-      for (const target of targets) {
-        const ply = resolve(tempDir, `level-${target.level}.ply`);
-        // Each decimation starts from the validated/recovered master, not LOD 0.
-        await run("npx", ["splat-transform", "--overwrite", prepared.input,
-          "--filter-nan", "--decimate", String(target.count), ply]);
-        const info = await splatInfo(ply);
-        assertLodCount(info.numGaussians, target.count);
-        taggedInputs.push(ply, "--tag-lod", String(target.level));
-        records.push({ ...target, count: info.numGaussians });
-        if (target.level === 0) {
-          // Keep the flat entry point for existing clients; the portal uses stream/.
-          await run("npx", ["splat-transform", "--overwrite", ply, resolve(directory, basename(options.output))]);
-        }
-      }
-      await mkdir(resolve(directory, "stream"));
-      await run("npx", ["splat-transform", "--overwrite", ...taggedInputs, resolve(directory, "stream/lod-meta.json")]);
-      const streamed = await splatInfo(resolve(directory, "stream/lod-meta.json"));
-      if (streamed.lodCounts.some((count: number, level: number) => count !== records[level]?.count)) {
-        throw new Error("Native streamed output counts differ from generated levels.");
-      }
-      const editing = await writeLodCorrespondence(directory, "splat", records);
-      await writeFile(resolve(directory, "lod.json"), JSON.stringify({
-        version: LOD_POLICY_VERSION, kind: "splat", stream: "stream/lod-meta.json", levels: records, editing
-      }, null, 2));
-      return { records, bytes: await directorySize(directory) };
-    });
+    // The native loader validates this input before filtering/decimation. A failed
+    // load still aborts processing; recovery does not bypass PlayCanvas checks.
+    await run("npx", [
+      "splat-transform",
+      "--overwrite",
+      prepared.input,
+      "--filter-nan",
+      "--decimate",
+      TARGET_RATIO_PERCENT,
+      decimatedPly
+    ]);
+
+    await run("npx", ["splat-transform", "--overwrite", decimatedPly, options.output]);
 
     await writeManifest(manifestPath, {
       schemaVersion: 1,
@@ -71,17 +48,17 @@ async function main() {
       },
       derivative: {
         outputPath: options.output,
-        outputBytes: levels.bytes,
+        outputBytes: await directorySize(dirname(options.output)),
         publicRouteEligible: true
       },
       policy: {
         kind: "splat",
         decimationRequired: true,
-        lodPolicyVersion: LOD_POLICY_VERSION,
-        levels: levels.records,
+        targetRatio: TARGET_RATIO,
+        targetRatioPercent: TARGET_RATIO_PERCENT,
         format: "SOG",
-        streamedSog: true,
-        lod: true,
+        streamedSog: false,
+        lod: false,
         publicScaleMetadata: false
       },
       tools: {
@@ -90,7 +67,7 @@ async function main() {
       notes: [
         "The preservation master is not served by the portal.",
         "This derivative is intentionally decimated and converted to SOG for browser viewing.",
-        "Only generated derivative bundle files belong behind public /files routes."
+        "Only generated SOG files should be placed behind public /files routes."
       ]
     });
 
@@ -99,6 +76,16 @@ async function main() {
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+}
+
+async function directorySize(path: string): Promise<number> {
+  const entries = await readdir(path, { withFileTypes: true });
+  const sizes = await Promise.all(
+    entries
+      .filter((entry) => entry.isFile())
+      .map(async (entry) => (await stat(resolve(path, entry.name))).size)
+  );
+  return sizes.reduce((total, size) => total + size, 0);
 }
 
 main().catch((error: unknown) => {

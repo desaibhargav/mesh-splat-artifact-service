@@ -1,3 +1,0 @@
-# Offline correspondence only; neither dependency is shipped to the browser/API.
-numpy==2.0.2
-scipy==1.13.1
