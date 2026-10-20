@@ -1,6 +1,7 @@
-import { readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, extname, join, parse, resolve } from "node:path";
 import { exists, run } from "./derivative-utils.js";
+import { LOD_POLICY_VERSION } from "../src/artifacts/lodPolicy.js";
 
 type ArtifactSource = {
   slug: string;
@@ -23,7 +24,10 @@ async function main() {
   for (const [index, artifact] of artifacts.entries()) {
     const ordinal = `${index + 1}/${artifacts.length}`;
     const output = derivativeOutputPath(artifact);
-    const stale = force || !(await exists(output)) || (await maxMtimeMs(artifact.sourceRoot)) > (await maxMtimeMs(output));
+    const descriptor = join(parse(output).dir, "lod.json");
+    const policy = await exists(descriptor) ? JSON.parse(await readFile(descriptor, "utf8")) : null;
+    const currentPolicy = policy?.version === LOD_POLICY_VERSION && !!policy.editing;
+    const stale = force || !currentPolicy || !(await exists(output)) || (await maxMtimeMs(artifact.sourceRoot)) > (await maxMtimeMs(output));
 
     console.log(`\n[${ordinal}] ${stale ? "Processing" : "Skipping current"} ${artifact.type} derivative: ${artifact.slug}`);
     console.log(`      input:  ${artifact.input}`);

@@ -47,8 +47,8 @@ Default policy:
 
 | Type | Public derivative rule |
 | --- | --- |
-| Mesh | Simplify to 30% of original triangle count, capped at 1,000,000 triangles, using MeshOpt's simplifier; remove source normals before simplification and regenerate normals afterward so split/custom normals cannot silently block decimation; aggressive quantization; no emitted `EXT_meshopt_compression` until the viewer path supports it reliably. |
-| Splat | Decimate to 30% of original Gaussian count; convert to ordinary SOG; no Streamed SOG or LOD for now. |
+| Mesh | Generate 70%, 50%, and 30% triangle budgets independently from the master using MeshOpt's simplifier; remove source normals before simplification and regenerate normals afterward so split/custom normals cannot silently block decimation; aggressive quantization; no emitted `EXT_meshopt_compression` until the viewer path supports it reliably. |
+| Splat | Generate 70%, 50%, and 30% Gaussian budgets independently from the validated/recovered master; package with native PlayCanvas Streamed SOG. Retain a finest flat SOG for compatibility. |
 
 Generate a mesh derivative:
 
@@ -84,6 +84,9 @@ pipeline on the target AWS instance remain unverified.
 
 Before switching processing hosts:
 
+- Provision Python 3 with pinned NumPy/SciPy from `scripts/requirements-lod.txt`
+  for offline correspondence; serving does not require these packages. Verify
+  the native SOG streaming stages and all three independently reduced levels.
 - Pull the backend code and install its pinned dependencies on the target AWS
   processing host. Add `build-essential` to processing-host provisioning; do not
   assume the current setup scripts install the newly required C/C++ toolchain.
@@ -109,7 +112,7 @@ Generate derivatives for every new or updated source under `data/assets/master`:
 npm run process:derivatives
 ```
 
-The batch processor scans `data/assets/master` directly. It recognizes top-level `.glb` files as meshes, top-level `.ply` files as splats, and top-level directories containing `meta.json` as SOG splats. It ignores `data/assets/derivatives`. The script processes entries one at a time, prints progress as `[current/total]`, and skips derivatives that are already newer than their source. Use `npm run process:derivatives -- --force` to regenerate everything.
+The batch processor scans `data/assets/master` directly. It recognizes top-level `.glb` files as meshes, top-level `.ply` files as splats, and top-level directories containing `meta.json` as SOG splats. It ignores `data/assets/derivatives`. The script processes entries one at a time, prints progress as `[current/total]`, and skips derivatives whose LOD policy/correspondence metadata are current and which are newer than their source. Use `npm run process:derivatives -- --force` to regenerate everything.
 
 The scripts write public-route-eligible derivatives under the path supplied with `--output`. They also write a private manifest under:
 
@@ -119,7 +122,56 @@ data/authorization/derivative-manifests
 
 That manifest records the source path, output path, file sizes, processing policy, tool versions, and whether simplification/decimation was applied. It is for server-side/admin review and should not be exposed through `/files`.
 
-Mesh simplification is required, not best-effort. The script fails loudly if the derivative exceeds the target triangle count by more than a small tolerance. This prevents accidentally serving a near-master mesh when a source asset's topology blocks simplification. One observed example was the chess photogrammetry mesh: preserving its source normals allowed almost no triangle reduction, while removing and regenerating normals allowed the expected `288,557 -> 86,566` triangle reduction.
+Mesh simplification is required, not best-effort. The script fails loudly if the derivative exceeds the target triangle count (rounded down), with no upward tolerance. This prevents accidentally serving a near-master mesh when a source asset's topology blocks simplification. One observed example was the chess photogrammetry mesh: preserving its source normals allowed almost no triangle reduction, while removing and regenerating normals allowed the expected `288,557 -> 86,566` triangle reduction.
+
+### LOD generation and edit correspondence
+
+The central policy is `src/artifacts/lodPolicy.ts`: LOD 0 is 70%, LOD 1 is 50%,
+and LOD 2 is 30%. These replace the former single 30% derivative and the earlier
+proposed 60% ceiling. Each level starts from the master (or one recovered temporary
+PLY), never another simplified level. MeshOpt and SplatTransform perform geometry
+reduction; our code coordinates these library operations and checks the budgets.
+A failed level leaves the previous bundle intact. Output must be `content.glb` or
+`meta.json` inside a dedicated derivative directory.
+
+Mesh bundles contain the finest `content.glb`, `lod/1/content.glb`,
+`lod/2/content.glb`, and `lod.json`. Splat bundles contain a compatibility finest
+`meta.json` with textures, plus `stream/lod-meta.json` and its native SOG chunks.
+Native streaming selects precomputed spatial LODs, not continuous simplification.
+The compatibility SOG duplicates the finest geometry's encoding for older clients
+and thumbnail generation; the new portal streams the native bundle instead. It is
+not an additional higher-detail level.
+
+`editing/` holds gzip-compressed derived primitive centres and binary correspondence maps.
+The finest identity map is generated in the client, avoiding a redundant transfer.
+The file route declares `Content-Encoding: gzip`; browsers decode it natively. Native
+PlayCanvas/glTF Transform readers decode the published geometry, then SciPy's
+`cKDTree` generates nearest-centre mappings offline. No master IDs or paths appear
+in the public descriptor. Boundaries on different topology are approximate; retain
+canonical fine edit state so coarse display does not destroy fine saved boundaries.
+The mappings do not establish exact topology, physical correspondence or calibration.
+
+Processing now also needs Python 3 with the pinned offline dependencies:
+
+```bash
+python3 -m pip install -r scripts/requirements-lod.txt
+```
+
+These packages are not browser or serving-process dependencies. Include them in
+the deferred AWS processing migration and verify their Linux environment there.
+macOS validation includes both local GLB masters, Sakura PLY, the truncated PLY
+through RPly recovery, and both SOG chess masters. The portal uses native splat
+streaming and an attributed Three.js r180 LOD adaptation over PlayCanvas meshes.
+Edit state remains canonical at the finest published level and is projected onto
+coarser display geometry without pinning fine LOD during editing. See the frontend
+[LOD design and browser verification](https://github.com/desaibhargav/mesh-splat-portal-web/blob/main/docs/lod.md).
+An older deployed portal must be updated to enable automatic LOD.
+
+There remains one thumbnail per asset, not per LOD. Existing thumbnails can stay.
+Private processing manifests retain source details outside public file delivery.
+A 70% per-level primitive cap is a publication policy, not copy protection: users
+can extract derivatives, and independently generated levels can reveal complementary
+detail. Original-resolution textures also are not covered by a triangle-count cap.
 
 ## Publish processed assets
 
@@ -201,8 +253,8 @@ Even without login, the service keeps important server-side boundaries:
 
 - The browser never receives direct filesystem paths or raw storage locations.
 - Catalog records point only at generated derivatives, not preservation masters.
-- `/files/:artifactId/content/:filename` serves only the exact registered content file for that artifact.
-- SOG splats may request component files beside their registered `meta.json`, but still only inside that artifact's registered derivative directory.
+- `/files/:artifactId/*` permits only files reachable from the registered derivative entry, its LOD descriptor, and native SOG manifests. Arbitrary sibling files are denied.
+- Runtime checks require the `derivatives/<slug>/` namespace and reject symbolic links in every requested path component, including thumbnail paths.
 - Dotfiles and path traversal are denied.
 - Unknown artifact IDs and unregistered files return 404.
 - Browser/proxy caching is disabled for file responses as a conservative demo policy.
@@ -228,6 +280,10 @@ npm run dev
 `npm run setup:local` creates an ignored `.env` and downloads public demonstration assets. It does not overwrite an existing `.env` or existing assets. If Homebrew services are unavailable, start PostgreSQL directly with the `pg_ctl` command printed by Homebrew.
 
 The included starter files are public demonstration assets such as Khronos Group's CC0 Scattering Skull sample and WakuFactory's CC0 Sakura splat sample. Confirm licensing before adding any new public demo asset.
+
+See the [2026-10-19 LOD security review](docs/lod-security-review.md) for tested route
+boundaries and outstanding process/network/TLS isolation gaps. The audit did not
+apply infrastructure changes.
 
 ## AWS demo deployment notes
 
