@@ -434,3 +434,7 @@ Redeployment script inputs:
 ## Current status
 
 The service includes a public catalog API, cursor-paginated server-side search, object/file boundary checks, range-capable derivative file delivery, security headers, rate limiting, a fixed Prisma/PostgreSQL schema, graceful shutdown, derivative processing scripts, and security-focused route tests.
+
+## Archived LOD experiment
+
+Main serves one 30% derivative per asset, with the existing one-million-triangle mesh cap and one thumbnail. The complete multi-level processing/runtime experiment is preserved on the `lod` branch in this repository and the frontend repository. Mac-generated bundles and their private processing manifests are retained outside public delivery under `data/authorization/lod-archive-20261020/`. Do not process or publish those archived bundles as current derivatives. Browser-only tool changes still require normal frontend deployment. The independent [security audit observations](docs/deployment-security-observations.md) remain open.
