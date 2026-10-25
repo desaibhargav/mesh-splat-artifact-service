@@ -104,15 +104,14 @@ function toResponse(artifact: ArtifactRecord) {
 
 function sendPublicDerivativeFile(reply: FastifyReply, relativePath: string, mimeType: string) {
   reply
-    .header("Cache-Control", "private, no-store")
-    .header("Pragma", "no-cache")
+    .header("Cache-Control", "private, max-age=300, must-revalidate")
     .type(mimeType);
   return reply.sendFile(relativePath, {
     acceptRanges: true,
     cacheControl: false,
     dotfiles: "deny",
-    etag: false,
-    lastModified: false
+    etag: true,
+    lastModified: true
   });
 }
 

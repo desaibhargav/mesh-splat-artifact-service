@@ -205,7 +205,7 @@ Even without login, the service keeps important server-side boundaries:
 - SOG splats may request component files beside their registered `meta.json`, but still only inside that artifact's registered derivative directory.
 - Dotfiles and path traversal are denied.
 - Unknown artifact IDs and unregistered files return 404.
-- Browser/proxy caching is disabled for file responses as a conservative demo policy.
+- Published derivative and thumbnail responses allow private browser caching for five minutes and support ETag revalidation afterward. The gateway does not cache files; preservation masters have no public file route.
 
 This protects against accidental exposure and simple URL guessing. It does not prevent a user from copying bytes that are intentionally delivered to their browser for client-side rendering. If IU later requires restricted artifacts, authentication and per-artifact authorization should be reintroduced before serving those records.
 

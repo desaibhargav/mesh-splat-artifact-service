@@ -84,7 +84,10 @@ describe("public derivative file boundary", () => {
     app = await buildApp({ config, repository: new TestRepository() });
     const response = await app.inject({ method: "GET", url: `/files/${artifact.id}/test-model.glb` });
     expect(response.statusCode).toBe(200);
-    expect(response.headers["cache-control"]).toBe("private, no-store");
+    expect(response.headers["cache-control"]).toBe("private, max-age=300, must-revalidate");
+    expect(response.headers.etag).toBeDefined();
+    const repeated = await app.inject({ method: "GET", url: `/files/${artifact.id}/test-model.glb`, headers: { "if-none-match": String(response.headers.etag) } });
+    expect(repeated.statusCode).toBe(304);
     expect(response.body).toBe("test-model\n");
   });
 
@@ -100,7 +103,7 @@ describe("public derivative file boundary", () => {
     const response = await app.inject({ method: "GET", url: `/files/${sogArtifact.id}/means_l.webp` });
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toContain("image/webp");
-    expect(response.headers["cache-control"]).toBe("private, no-store");
+    expect(response.headers["cache-control"]).toBe("private, max-age=300, must-revalidate");
   });
 
   it("does not serve unregistered files for mesh artifacts", async () => {
