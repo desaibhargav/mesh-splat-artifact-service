@@ -1,4 +1,6 @@
-import { readdir, stat } from "node:fs/promises";
+import { LOD_RATIOS } from "../src/artifacts/lodPolicy.js";
+import { derivativeFiles, regularFile } from "../src/artifacts/derivativeFiles.js";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, extname, join, parse, resolve } from "node:path";
 import { exists, run } from "./derivative-utils.js";
 
@@ -15,7 +17,9 @@ const masterRoot = "data/assets/master";
 const derivativeRoot = "data/assets/derivatives";
 
 async function main() {
-  const artifacts = await discoverArtifacts();
+  const kind = [...args].find(arg=>arg.startsWith("--type="))?.slice(7);
+  if (kind && kind !== "mesh" && kind !== "splat") throw new Error("--type must be mesh or splat.");
+  const artifacts = (await discoverArtifacts()).filter(asset=>!kind || asset.type === kind);
   if (artifacts.length === 0) throw new Error(`No processable master assets found under ${masterRoot}.`);
 
   let processed = 0;
@@ -23,7 +27,19 @@ async function main() {
   for (const [index, artifact] of artifacts.entries()) {
     const ordinal = `${index + 1}/${artifacts.length}`;
     const output = derivativeOutputPath(artifact);
-    const stale = force || !(await exists(output)) || (await maxMtimeMs(artifact.sourceRoot)) > (await maxMtimeMs(output));
+    let currentPolicy = artifact.type === "mesh";
+    if (!currentPolicy) {
+      try {
+        const metadata = JSON.parse(await readFile(join(derivativeRoot, artifact.slug, "lod.json"), "utf8"));
+        currentPolicy = metadata.kind === "splat" && metadata.levels?.length === LOD_RATIOS.length &&
+          metadata.levels.every((level: {ratio:number}, index:number)=>level.ratio === LOD_RATIOS[index]);
+        if (currentPolicy) {
+          const files = await derivativeFiles("data/assets", `derivatives/${artifact.slug}/meta.json`);
+          await Promise.all([...files].map(file => regularFile("data/assets", file)));
+        }
+      } catch { currentPolicy = false; /* Missing, old, or incomplete stream bundle requires regeneration. */ }
+    }
+    const stale = force || !currentPolicy || !(await exists(output)) || (await maxMtimeMs(artifact.sourceRoot)) > (await maxMtimeMs(output));
 
     console.log(`\n[${ordinal}] ${stale ? "Processing" : "Skipping current"} ${artifact.type} derivative: ${artifact.slug}`);
     console.log(`      input:  ${artifact.input}`);

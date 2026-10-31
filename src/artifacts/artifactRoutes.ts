@@ -1,3 +1,5 @@
+import { lstat } from "node:fs/promises";
+import { derivativeFiles, regularFile, relativeFile } from "./derivativeFiles.js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { dirname, join } from "node:path";
 import { z } from "zod";
@@ -14,11 +16,12 @@ const searchSchema = z.object({
 const artifactIdSchema = z.object({ artifactId: z.string().uuid() });
 const artifactFileSchema = z.object({
   artifactId: z.string().uuid(),
-  filename: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/)
+  "*": relativeFile
 });
 
 export interface ArtifactRouteDependencies {
   repository: ArtifactRepository;
+  config: { artifactRoot: string };
 }
 
 export async function registerArtifactRoutes(
@@ -34,7 +37,7 @@ export async function registerArtifactRoutes(
       ...(search.cursor ? { cursor: search.cursor } : {})
     });
     return {
-      items: page.items.map(toResponse),
+      items: await Promise.all(page.items.map(artifact => toResponse(artifact, dependencies.config.artifactRoot))),
       nextCursor: page.nextCursor
     };
   });
@@ -43,15 +46,33 @@ export async function registerArtifactRoutes(
     const { artifactId } = artifactIdSchema.parse(request.params);
     const artifact = await dependencies.repository.findById(artifactId);
     if (!artifact) throw notFound();
-    return toResponse(artifact);
+    return toResponse(artifact, dependencies.config.artifactRoot);
   });
 
-  app.get("/files/:artifactId/:filename", async (request, reply) => {
-    const { artifactId, filename } = artifactFileSchema.parse(request.params);
+  const bundles = new Map<string, { identity: string; files: Set<string> }>();
+  app.get("/files/:artifactId/*", async (request, reply) => {
+    const { artifactId, "*": filename } = artifactFileSchema.parse(request.params);
     const artifact = await dependencies.repository.findById(artifactId);
-    const file = artifact && resolveArtifactFile(artifact, filename);
-    if (!file) throw notFound();
-    return sendPublicDerivativeFile(reply, file.path, file.mimeType);
+    if (!artifact) throw notFound();
+    const directory = dirname(artifact.contentPath), root = dependencies.config.artifactRoot;
+    try {
+      const info = await lstat(join(root, directory));
+      if (!info.isDirectory()) throw notFound();
+      const identity = `${info.dev}:${info.ino}:${info.mtimeMs}`;
+      let cached = bundles.get(artifact.id);
+      if (!cached || cached.identity !== identity) {
+        cached = { identity, files: await derivativeFiles(root, artifact.contentPath) };
+        bundles.set(artifact.id, cached);
+      }
+      const path = join(directory, filename);
+      if (!cached.files.has(path)) throw notFound();
+      await regularFile(root, path);
+      return sendPublicDerivativeFile(reply, path, artifactComponentMimeType(filename));
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      request.log.warn({ artifactId }, "Rejected invalid derivative bundle or file");
+      throw notFound();
+    }
   });
 
   app.get("/files/:artifactId/thumbnail", async (request, reply) => {
@@ -62,23 +83,8 @@ export async function registerArtifactRoutes(
   });
 }
 
-function resolveArtifactFile(
-  artifact: ArtifactRecord,
-  filename: string
-): { path: string; mimeType: string } | null {
-  if (filename === artifact.contentFilename) {
-    return { path: artifact.contentPath, mimeType: artifact.mimeType };
-  }
-
-  // A SOG artifact is an isolated directory containing meta.json and its texture components.
-  // Each component request is checked against the artifact's registered derivative directory.
-  if (artifact.contentFilename === "meta.json" && dirname(artifact.contentPath) !== ".") {
-    return { path: join(dirname(artifact.contentPath), filename), mimeType: artifactComponentMimeType(filename) };
-  }
-  return null;
-}
-
 function artifactComponentMimeType(filename: string): string {
+  if (/\.glb$/i.test(filename)) return "model/gltf-binary";
   if (/\.json$/i.test(filename)) return "application/json";
   if (/\.webp$/i.test(filename)) return "image/webp";
   return "application/octet-stream";
@@ -90,24 +96,33 @@ function thumbnailMimeType(path: string): string {
   return "image/webp";
 }
 
-function toResponse(artifact: ArtifactRecord) {
+async function toResponse(artifact: ArtifactRecord, root: string) {
+  let lodUrl: string | null = null;
+  if (artifact.type === "splat" && /^derivatives\/[a-z0-9][a-z0-9-]*\/meta\.json$/.test(artifact.contentPath)) {
+    try {
+      await regularFile(root, join(dirname(artifact.contentPath), "lod.json"));
+      lodUrl = `/files/${artifact.id}/lod.json`;
+    } catch { /* Fixed SOG derivatives remain supported. */ }
+  }
   return {
     id: artifact.id,
     title: artifact.title,
     description: artifact.description,
     type: artifact.type,
     thumbnailUrl: artifact.thumbnailPath ? `/files/${artifact.id}/thumbnail` : null,
-    contentUrl: `/files/${artifact.id}/${encodeURIComponent(artifact.contentFilename)}`,
+    contentUrl: `/files/${artifact.id}/${lodUrl ? "stream/lod-meta.json" : encodeURIComponent(artifact.contentFilename)}`,
+    lodUrl,
     sizeBytes: artifact.sizeBytes
   };
 }
 
 function sendPublicDerivativeFile(reply: FastifyReply, relativePath: string, mimeType: string) {
+  if (relativePath.endsWith(".bin.gz")) reply.header("Content-Encoding", "gzip");
   reply
     .header("Cache-Control", "private, max-age=300, must-revalidate")
     .type(mimeType);
   return reply.sendFile(relativePath, {
-    acceptRanges: true,
+    acceptRanges: !relativePath.endsWith(".bin.gz"),
     cacheControl: false,
     dotfiles: "deny",
     etag: true,

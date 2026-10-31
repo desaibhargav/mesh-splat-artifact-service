@@ -15,8 +15,8 @@ const artifact: ArtifactRecord = {
   description: "Public test asset",
   type: "mesh",
   thumbnailPath: "test-thumbnail.webp",
-  contentPath: "test-model.glb",
-  contentFilename: "test-model.glb",
+  contentPath: "derivatives/test-mesh/content.glb",
+  contentFilename: "content.glb",
   mimeType: "model/gltf-binary",
   sizeBytes: 10
 };
@@ -27,7 +27,7 @@ const sogArtifact: ArtifactRecord = {
   title: "Test SOG",
   type: "splat",
   thumbnailPath: null,
-  contentPath: "test-sog/meta.json",
+  contentPath: "derivatives/test-sog/meta.json",
   contentFilename: "meta.json",
   mimeType: "application/json"
 };
@@ -68,7 +68,7 @@ describe("public artifact catalog", () => {
     const response = await app.inject({ method: "GET", url: "/api/v1/artifacts?query=test&type=mesh" });
     expect(response.statusCode).toBe(200);
     expect(repository.lastSearch).toMatchObject({ query: "test", type: "mesh", limit: 24 });
-    expect(response.json().items[0].contentUrl).toBe(`/files/${artifact.id}/test-model.glb`);
+    expect(response.json().items[0].contentUrl).toBe(`/files/${artifact.id}/content.glb`);
   });
 
   it("returns one public artifact by id", async () => {
@@ -82,11 +82,11 @@ describe("public artifact catalog", () => {
 describe("public derivative file boundary", () => {
   it("returns registered derivative file bytes without authentication", async () => {
     app = await buildApp({ config, repository: new TestRepository() });
-    const response = await app.inject({ method: "GET", url: `/files/${artifact.id}/test-model.glb` });
+    const response = await app.inject({ method: "GET", url: `/files/${artifact.id}/content.glb` });
     expect(response.statusCode).toBe(200);
     expect(response.headers["cache-control"]).toBe("private, max-age=300, must-revalidate");
     expect(response.headers.etag).toBeDefined();
-    const repeated = await app.inject({ method: "GET", url: `/files/${artifact.id}/test-model.glb`, headers: { "if-none-match": String(response.headers.etag) } });
+    const repeated = await app.inject({ method: "GET", url: `/files/${artifact.id}/content.glb`, headers: { "if-none-match": String(response.headers.etag) } });
     expect(repeated.statusCode).toBe(304);
     expect(response.body).toBe("test-model\n");
   });
@@ -114,7 +114,7 @@ describe("public derivative file boundary", () => {
 
   it("returns 404 for unknown artifacts", async () => {
     app = await buildApp({ config, repository: new TestRepository(null) });
-    const response = await app.inject({ method: "GET", url: `/files/${artifact.id}/test-model.glb` });
+    const response = await app.inject({ method: "GET", url: `/files/${artifact.id}/content.glb` });
     expect(response.statusCode).toBe(404);
   });
 });

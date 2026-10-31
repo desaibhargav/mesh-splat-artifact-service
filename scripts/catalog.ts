@@ -1,18 +1,6 @@
-import { lstat, readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
-import { z } from "zod";
-
-const filename = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*\.webp$/);
-const textures = (count: number) => z.object({ files: z.array(filename).length(count) });
-const sogSchema = z.object({
-  version: z.literal(2),
-  count: z.number().int().positive(),
-  means: textures(2),
-  scales: textures(1),
-  quats: textures(1),
-  sh0: textures(1),
-  shN: textures(2).optional()
-});
+import { lstat, readdir } from "node:fs/promises";
+import { join, relative } from "node:path";
+import { derivativeFiles, regularFile } from "../src/artifacts/derivativeFiles.js";
 
 export interface CatalogAsset {
   slug: string;
@@ -34,19 +22,16 @@ export async function inspectDerivative(root: string, slug: string): Promise<Cat
   if (mesh === splat) throw new Error("Expected exactly one of content.glb or meta.json.");
 
   const contentFilename = mesh ? "content.glb" : "meta.json";
-  let contentFiles = [contentFilename];
-  if (splat) {
-    await publicFileSize(join(directory, contentFilename));
-    const meta = sogSchema.parse(JSON.parse(await readFile(join(directory, contentFilename), "utf8")));
-    contentFiles.push(...meta.means.files, ...meta.scales.files, ...meta.quats.files, ...meta.sh0.files,
-      ...(meta.shN?.files ?? []));
-    if (new Set(contentFiles).size !== contentFiles.length) throw new Error("SOG component names must be unique.");
-    // The public SOG route can serve siblings, so the directory must contain only its components.
-    if (files.some(file => !contentFiles.includes(file))) throw new Error("Unexpected file in SOG derivative directory.");
+  const contentPath = `derivatives/${slug}/${contentFilename}`;
+  const contentFiles = await derivativeFiles(root, contentPath);
+  const actual = await readdir(directory, { recursive: true, withFileTypes: true });
+  for (const entry of actual) {
+    if (entry.isDirectory()) continue;
+    const path = join(entry.parentPath, entry.name);
+    if (!contentFiles.has(relative(root, path))) throw new Error("Unexpected file in derivative directory.");
   }
-
   let sizeBytes = 0n;
-  for (const file of contentFiles) sizeBytes += await publicFileSize(join(directory, file));
+  for (const file of contentFiles) sizeBytes += BigInt(await regularFile(root, file));
   const thumbnailPath = `thumbnails/${slug}.webp`;
   if (!(await lstat(join(root, "thumbnails"))).isDirectory()) throw new Error("Expected a thumbnails directory, not a symlink.");
   await publicFileSize(join(root, thumbnailPath));

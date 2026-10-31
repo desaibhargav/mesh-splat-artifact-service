@@ -48,7 +48,7 @@ Default policy:
 | Type | Public derivative rule |
 | --- | --- |
 | Mesh | Simplify to 30% of original triangle count, capped at 1,000,000 triangles, using MeshOpt's simplifier; remove source normals before simplification and regenerate normals afterward so split/custom normals cannot silently block decimation; aggressive quantization; no emitted `EXT_meshopt_compression` until the viewer path supports it reliably. |
-| Splat | Decimate to 30% of original Gaussian count; convert to ordinary SOG; no Streamed SOG or LOD for now. |
+| Splat | After PLY recovery/validation, independently decimate the master to 30%, 15% and 7.5%; native SplatTransform produces Streamed SOG plus offline edit correspondence. The finest public level stays at 30%; retain a flat SOG entry point and one thumbnail. |
 
 Generate a mesh derivative:
 
@@ -437,4 +437,14 @@ The service includes a public catalog API, cursor-paginated server-side search, 
 
 ## Archived LOD experiment
 
-Main serves one 30% derivative per asset, with the existing one-million-triangle mesh cap and one thumbnail. The complete multi-level processing/runtime experiment is preserved on the `lod` branch in this repository and the frontend repository. Mac-generated bundles and their private processing manifests are retained outside public delivery under `data/authorization/lod-archive-20261020/`. Do not process or publish those archived bundles as current derivatives. Browser-only tool changes still require normal frontend deployment. The independent [security audit observations](docs/deployment-security-observations.md) remain open.
+Meshes keep one 30% derivative with the one-million-triangle cap. Splats now restore only native streamed LOD, with a 30% finest level and 15%/7.5% coarser levels; mesh LOD remains disabled. One thumbnail remains sufficient. The complete multi-level processing/runtime experiment is preserved on the `lod` branch in this repository and the frontend repository. Mac-generated bundles and their private processing manifests are retained outside public delivery under `data/authorization/lod-archive-20261020/`. Do not process or publish those archived bundles as current derivatives. Browser-only tool changes still require normal frontend deployment. The independent [security audit observations](docs/deployment-security-observations.md) remain open.
+
+## Current native splat streaming
+
+Run `npm run process:derivatives -- --type=splat` to regenerate only missing/outdated splat bundles (or add `--force`). Existing flat derivatives without lod.json are recognized as outdated. PLY recovery runs once before source counts and native decimation; each level starts from the validated master. A failed stage retains the previous complete derivative. Private processing manifests remain under data/authorization, outside all public file graphs.
+
+SplatTransform 3.3.0 writes stream/lod-meta.json and the referenced regional SOG chunks. The flat meta.json remains for compatibility. lod.json identifies the public detail ceiling and compressed editing maps. SciPy cKDTree supplies offline approximate nearest-centre correspondence; install the pinned processing dependencies with `python3 -m pip install -r scripts/requirements-lod.txt` in the processing environment. Native decoders read geometry; our code coordinates generation and publication. No new thumbnail is needed for each level.
+
+The catalog returns the stream as contentUrl and lod.json as lodUrl for streamed splats. Meshes retain their fixed contentUrl. The file gateway serves only the validated metadata/component/correspondence graph, rejects traversal and symlinks, and retains private five-minute browser caching with ETags. Compressed maps have Content-Encoding: gzip; masters and private manifests are never in that graph. Transfer only validated derivatives and existing thumbnails, then run catalog:sync to update sizes without changing IDs.
+
+Processing still runs on macOS. AWS serving must receive the rebuilt backend before publishing nested stream bundles. The future AWS processing migration additionally needs NumPy/SciPy and a clean native SplatTransform/RPly build, with the full pipeline tested on Linux; that migration remains unverified.
